@@ -6,7 +6,7 @@ interface GobangAction {
   col: number;
 }
 
-type ProviderId = 'ai:openai' | 'ai:deepseek';
+type ProviderId = 'ai:openai' | 'ai:deepseek' | 'ai:kimi' | 'ai:qwen';
 
 interface MoveResponse {
   move: GobangAction;
@@ -28,6 +28,8 @@ interface RequestBody {
 const PROVIDER_LABEL: Record<string, string> = {
   'ai:openai': 'OpenAI',
   'ai:deepseek': 'DeepSeek',
+  'ai:kimi': 'Kimi',
+  'ai:qwen': 'Qwen',
 };
 
 const RULES_DESCRIPTION = [
@@ -126,12 +128,24 @@ function buildPrompt(body: RequestBody, legalMoves: GobangAction[]): { system: s
   return { system, user };
 }
 
-async function callOpenAI(apiKey: string | undefined, model: string | undefined, system: string, user: string) {
+function resolveChatEndpoint(defaultBase: string, baseUrl: string | undefined): string {
+  const base = (baseUrl && baseUrl.trim().length > 0 ? baseUrl.trim() : defaultBase).replace(/\/$/, '');
+  return `${base}/v1/chat/completions`;
+}
+
+async function callOpenAI(
+  apiKey: string | undefined,
+  model: string | undefined,
+  system: string,
+  user: string,
+  baseUrl: string | undefined
+) {
   if (!apiKey || !apiKey.trim()) {
     throw new Error('未提供 OpenAI API Key');
   }
 
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+  const endpoint = resolveChatEndpoint('https://api.openai.com', baseUrl);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -157,12 +171,19 @@ async function callOpenAI(apiKey: string | undefined, model: string | undefined,
   return extractFirstJsonObject(String(text));
 }
 
-async function callDeepSeek(apiKey: string | undefined, model: string | undefined, system: string, user: string) {
+async function callDeepSeek(
+  apiKey: string | undefined,
+  model: string | undefined,
+  system: string,
+  user: string,
+  baseUrl: string | undefined
+) {
   if (!apiKey || !apiKey.trim()) {
     throw new Error('未提供 DeepSeek API Key');
   }
 
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+  const endpoint = resolveChatEndpoint('https://api.deepseek.com', baseUrl);
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -189,6 +210,80 @@ async function callDeepSeek(apiKey: string | undefined, model: string | undefine
   return extractFirstJsonObject(String(text));
 }
 
+async function callKimi(
+  apiKey: string | undefined,
+  model: string | undefined,
+  system: string,
+  user: string,
+  baseUrl: string | undefined
+) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('未提供 Kimi API Key');
+  }
+
+  const endpoint = resolveChatEndpoint('https://api.moonshot.cn', baseUrl);
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: (model && model.trim()) || 'moonshot-v1-8k',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Kimi 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
+  }
+
+  const payload: any = await response.json();
+  const text = payload?.choices?.[0]?.message?.content ?? '';
+  return extractFirstJsonObject(String(text));
+}
+
+async function callQwen(
+  apiKey: string | undefined,
+  model: string | undefined,
+  system: string,
+  user: string
+) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('未提供 Qwen API Key');
+  }
+
+  const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: (model && model.trim()) || 'qwen-plus',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Qwen 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
+  }
+
+  const payload: any = await response.json();
+  const text = payload?.choices?.[0]?.message?.content ?? '';
+  return extractFirstJsonObject(String(text));
+}
+
 async function resolveMove(body: RequestBody, legalMoves: GobangAction[]): Promise<MoveResponse> {
   const provider = (body.provider || '').toLowerCase() as ProviderId;
   const { system, user } = buildPrompt(body, legalMoves);
@@ -196,10 +291,16 @@ async function resolveMove(body: RequestBody, legalMoves: GobangAction[]): Promi
   let raw: any;
   switch (provider) {
     case 'ai:openai':
-      raw = await callOpenAI(body.apiKey, body.model, system, user);
+      raw = await callOpenAI(body.apiKey, body.model, system, user, body.baseUrl);
       break;
     case 'ai:deepseek':
-      raw = await callDeepSeek(body.apiKey, body.model, system, user);
+      raw = await callDeepSeek(body.apiKey, body.model, system, user, body.baseUrl);
+      break;
+    case 'ai:kimi':
+      raw = await callKimi(body.apiKey, body.model, system, user, body.baseUrl);
+      break;
+    case 'ai:qwen':
+      raw = await callQwen(body.apiKey, body.model, system, user);
       break;
     default:
       throw new Error('暂不支持的外置 AI 提供方');

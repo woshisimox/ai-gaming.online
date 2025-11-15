@@ -108,8 +108,8 @@ const MODE_GROUPS: Array<{
       { value: 'ai:deepseek', label: 'DeepSeek' },
       { value: 'ai:gemini', label: 'Gemini', disabled: true },
       { value: 'ai:grok', label: 'Grok', disabled: true },
-      { value: 'ai:kimi', label: 'Kimi', disabled: true },
-      { value: 'ai:qwen', label: 'Qwen', disabled: true },
+      { value: 'ai:kimi', label: 'Kimi' },
+      { value: 'ai:qwen', label: 'Qwen' },
       { value: 'http', label: 'HTTP Hook', disabled: true },
     ],
   },
@@ -531,6 +531,71 @@ export default function GobangRenderer() {
                   placeholder="deepseek-chat"
                 />
                 <span className={styles.configHelp}>留空使用推荐模型 deepseek-chat。</span>
+              </label>
+            </div>
+          );
+        case 'ai:kimi':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                Kimi API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（可选）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="moonshot-v1-8k"
+                />
+                <span className={styles.configHelp}>留空使用推荐模型 moonshot-v1-8k。</span>
+              </label>
+              <label className={styles.configLabel}>
+                API 基础地址（可选）
+                <input
+                  type="text"
+                  value={config.baseUrl ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { baseUrl: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="https://api.moonshot.cn"
+                />
+                <span className={styles.configHelp}>如使用代理，可在此处覆盖默认地址。</span>
+              </label>
+            </div>
+          );
+        case 'ai:qwen':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                Qwen API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（可选）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="qwen-plus"
+                />
+                <span className={styles.configHelp}>留空使用推荐模型 qwen-plus。</span>
               </label>
             </div>
           );
