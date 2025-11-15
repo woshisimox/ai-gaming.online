@@ -1,0 +1,226 @@
+import type { NextApiRequest, NextApiResponse } from 'next';
+import { extractFirstJsonObject } from '../../../lib/bots/util';
+
+interface GobangAction {
+  row: number;
+  col: number;
+}
+
+type ProviderId = 'ai:openai' | 'ai:deepseek';
+
+interface MoveResponse {
+  move: GobangAction;
+  reason?: string;
+  provider?: string;
+}
+
+interface RequestBody {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  token?: string;
+  observation?: string;
+  legalMoves?: GobangAction[];
+  player?: number;
+}
+
+const PROVIDER_LABEL: Record<string, string> = {
+  'ai:openai': 'OpenAI',
+  'ai:deepseek': 'DeepSeek',
+};
+
+function providerLabel(provider: string): string {
+  return PROVIDER_LABEL[provider] ?? provider;
+}
+
+function sanitizeLegalMoves(raw: any): GobangAction[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => ({
+      row: Number((item ?? {}).row),
+      col: Number((item ?? {}).col),
+    }))
+    .filter((item) => Number.isInteger(item.row) && Number.isInteger(item.col));
+}
+
+function ensureLegalMove(
+  candidate: { row?: number; col?: number; reason?: string } | null | undefined,
+  legalMoves: GobangAction[],
+  fallbackReason: string
+): { move: GobangAction; reason?: string } {
+  const fallback = legalMoves[0];
+  if (!fallback) {
+    throw new Error('No legal moves available');
+  }
+
+  if (!candidate) {
+    return { move: fallback, reason: fallbackReason };
+  }
+
+  const row = Number(candidate.row);
+  const col = Number(candidate.col);
+  if (!Number.isInteger(row) || !Number.isInteger(col)) {
+    return { move: fallback, reason: fallbackReason };
+  }
+
+  const match = legalMoves.find((move) => move.row === row && move.col === col);
+  if (!match) {
+    return { move: fallback, reason: `${fallbackReason}（AI 提供了非法落点，已改用 ${fallback.row},${fallback.col}）` };
+  }
+
+  const reason = typeof candidate.reason === 'string' ? candidate.reason.trim() : undefined;
+  return { move: match, reason };
+}
+
+function extractBoard(observation: string | undefined): { board: string[]; metadata: string } {
+  if (!observation || typeof observation !== 'string') {
+    return { board: [], metadata: '' };
+  }
+
+  const lines = observation.split(/\r?\n/);
+  const boardIndex = lines.findIndex((line) => line.trim().toLowerCase() === 'board:');
+  const board = boardIndex >= 0 ? lines.slice(boardIndex + 1).filter((line) => line.trim().length > 0) : [];
+  const metadata = boardIndex >= 0 ? lines.slice(0, boardIndex).join('\n') : observation;
+  return { board, metadata };
+}
+
+function buildPrompt(body: RequestBody, legalMoves: GobangAction[]): { system: string; user: string } {
+  const observation = typeof body.observation === 'string' ? body.observation : '';
+  const { board, metadata } = extractBoard(observation);
+  const legalList = legalMoves.map((move) => `(${move.row},${move.col})`).join(', ');
+  const playerInfo = Number.isInteger(body.player) ? `当前代理编号：${body.player}` : '当前代理编号：未知';
+
+  const system = [
+    'You are a Gomoku (Gobang) AI assistant.',
+    'Only respond with a strict JSON object: {"row":number,"col":number,"reason":"brief explanation"}.',
+    'Rows and columns are 0-indexed from the top-left intersection.',
+    'Choose only from the provided legal moves and favour winning/blocking critical threats.',
+  ].join(' ');
+
+  const boardSection = board.length
+    ? `棋盘（行号从上到下）：\n${board.join('\n')}`
+    : '棋盘数据：暂无（请依赖 observation 文本）';
+
+  const user = [
+    playerInfo,
+    metadata,
+    boardSection,
+    `合法落点列表：${legalList}`,
+    '请输出严格的 JSON，不要包含额外文字。',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  return { system, user };
+}
+
+async function callOpenAI(apiKey: string | undefined, model: string | undefined, system: string, user: string) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('未提供 OpenAI API Key');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: (model && model.trim()) || 'gpt-4o-mini',
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`OpenAI 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
+  }
+
+  const payload: any = await response.json();
+  const text = payload?.choices?.[0]?.message?.content ?? '';
+  return extractFirstJsonObject(String(text));
+}
+
+async function callDeepSeek(apiKey: string | undefined, model: string | undefined, system: string, user: string) {
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('未提供 DeepSeek API Key');
+  }
+
+  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${apiKey.trim()}`,
+    },
+    body: JSON.stringify({
+      model: (model && model.trim()) || 'deepseek-chat',
+      temperature: 0.2,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+      stream: false,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`DeepSeek 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
+  }
+
+  const payload: any = await response.json();
+  const text = payload?.choices?.[0]?.message?.content ?? '';
+  return extractFirstJsonObject(String(text));
+}
+
+async function resolveMove(body: RequestBody, legalMoves: GobangAction[]): Promise<MoveResponse> {
+  const provider = (body.provider || '').toLowerCase() as ProviderId;
+  const { system, user } = buildPrompt(body, legalMoves);
+
+  let raw: any;
+  switch (provider) {
+    case 'ai:openai':
+      raw = await callOpenAI(body.apiKey, body.model, system, user);
+      break;
+    case 'ai:deepseek':
+      raw = await callDeepSeek(body.apiKey, body.model, system, user);
+      break;
+    default:
+      throw new Error('暂不支持的外置 AI 提供方');
+  }
+
+  const fallbackLabel = `${providerLabel(provider)} 响应无效，已使用默认落点`;
+  const { move, reason } = ensureLegalMove(raw, legalMoves, fallbackLabel);
+  const trimmedReason = typeof reason === 'string' && reason.trim().length > 0 ? reason.trim().slice(0, 200) : undefined;
+  return { move, reason: trimmedReason, provider: providerLabel(provider) };
+}
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    res.status(405).json({ error: 'Method Not Allowed' });
+    return;
+  }
+
+  try {
+    const body = (req.body ?? {}) as RequestBody;
+    const legalMoves = sanitizeLegalMoves(body.legalMoves);
+    if (legalMoves.length === 0) {
+      res.status(400).json({ error: '缺少合法落点列表' });
+      return;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+
+    const result = await resolveMove(body, legalMoves);
+    res.status(200).json(result);
+  } catch (error: any) {
+    const message = error?.message || '外置 AI 调用失败';
+    res.status(500).send(message);
+  }
+}

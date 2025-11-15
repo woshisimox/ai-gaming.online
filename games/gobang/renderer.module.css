@@ -116,6 +116,45 @@
   border-color: rgba(16, 185, 129, 0.6);
 }
 
+.configGroup {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.configLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  color: rgba(203, 213, 225, 0.9);
+}
+
+.configInput {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  background: #0b1529;
+  color: #f8fafc;
+  font-size: 12px;
+  padding: 8px 12px;
+}
+
+.configInput::placeholder {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.configInput:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.45);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.configHelp {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.75);
+}
+
 .matchBadge {
   margin-top: 24px;
   align-self: center;
@@ -308,6 +347,33 @@
   gap: 8px;
 }
 
+.controlMessages {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.statusBanner {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  color: #bfdbfe;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.errorBanner {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(248, 113, 113, 0.14);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  color: #fecaca;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .statBadge {
   font-family: 'Fira Code', 'SFMono-Regular', monospace;
   padding: 4px 10px;
@@ -418,12 +484,19 @@
 
 .logItem {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.05);
   border-radius: 20px;
   padding: 8px 12px;
   font-size: 13px;
+}
+
+.logItemHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .logItemBadge {
@@ -460,4 +533,10 @@
   border-radius: 9999px;
   padding: 4px 8px;
   font-size: 11px;
+}
+
+.logReason {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.8);
+  line-height: 1.5;
 }
