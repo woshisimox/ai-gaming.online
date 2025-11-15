@@ -42,9 +42,11 @@ const PLAYERS: PlayerPresentation[] = [
 ];
 
 const INTERSECTION_HIT_SIZE = `calc((100% / ${BOARD_SIZE}) * 1.15)`;
-const STONE_SIZE = `calc((100% / ${BOARD_SIZE}) * 0.92)`;
-const GUIDE_DOT_SIZE = `calc((100% / ${BOARD_SIZE}) * 0.24)`;
-const LAST_MOVE_RING_SIZE = `calc((100% / ${BOARD_SIZE}) * 1.08)`;
+// Size tokens are relative to each intersection's hit area so that the stones scale
+// proportionally with the rendered board instead of being divided twice by the board size.
+const STONE_SIZE = 'calc(100% * 0.42)';
+const GUIDE_DOT_SIZE = 'calc(100% * 0.22)';
+const LAST_MOVE_RING_SIZE = 'calc(100% * 0.54)';
 
 function createPendingInitialState(): GobangState {
   const initial = gobangEngine.initialState();
