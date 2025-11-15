@@ -48,6 +48,8 @@ const STONE_SIZE = 'calc(100% * 0.42)';
 const GUIDE_DOT_SIZE = 'calc(100% * 0.22)';
 const LAST_MOVE_RING_SIZE = 'calc(100% * 0.54)';
 
+const WIN_LENGTH = 5;
+
 function createPendingInitialState(): GobangState {
   const initial = gobangEngine.initialState();
   return {
@@ -147,16 +149,66 @@ function formatDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`;
 }
 
-function pickAiMove(state: GobangState, legal: GobangAction[]): GobangAction {
-  const { lastMove } = state.data;
+function inBounds(row: number, col: number): boolean {
+  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+function countDirection(board: GobangState['data']['board'], row: number, col: number, dr: number, dc: number, player: 0 | 1): number {
+  let r = row + dr;
+  let c = col + dc;
+  let count = 0;
+
+  while (inBounds(r, c) && board[r][c] === player) {
+    count += 1;
+    r += dr;
+    c += dc;
+  }
+
+  return count;
+}
+
+function wouldCompleteFive(board: GobangState['data']['board'], row: number, col: number, player: 0 | 1): boolean {
+  const directions: Array<[number, number]> = [
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [1, -1],
+  ];
+
+  return directions.some(([dr, dc]) => {
+    const forward = countDirection(board, row, col, dr, dc, player);
+    const backward = countDirection(board, row, col, -dr, -dc, player);
+    return forward + backward + 1 >= WIN_LENGTH;
+  });
+}
+
+function pickBuiltinMove(state: GobangState, legal: GobangAction[]): { action: GobangAction; note?: string } {
   if (legal.length === 0) {
     throw new Error('No legal moves available.');
   }
 
+  const board = state.data.board;
+  const current = state.currentPlayer as 0 | 1;
+  const opponent = ((current + 1) % gobangEngine.maxPlayers) as 0 | 1;
+
+  // 1. Win immediately if possible.
+  const winningMove = legal.find((move) => wouldCompleteFive(board, move.row, move.col, current));
+  if (winningMove) {
+    return { action: winningMove, note: '形成连五，立即获胜。' };
+  }
+
+  // 2. Block opponent's immediate win threat.
+  const blockingMove = legal.find((move) => wouldCompleteFive(board, move.row, move.col, opponent));
+  if (blockingMove) {
+    return { action: blockingMove, note: '阻挡对手即将连成五子。' };
+  }
+
+  const { lastMove } = state.data;
   if (lastMove) {
     const nearby = legal.filter((move) => Math.abs(move.row - lastMove.row) <= 1 && Math.abs(move.col - lastMove.col) <= 1);
     if (nearby.length > 0) {
-      return nearby[Math.floor(Math.random() * nearby.length)];
+      const choice = nearby[Math.floor(Math.random() * nearby.length)];
+      return { action: choice, note: '沿着最新战线继续进攻。' };
     }
   }
 
@@ -172,7 +224,7 @@ function pickAiMove(state: GobangState, legal: GobangAction[]): GobangAction {
     }
   });
 
-  return best;
+  return { action: best, note: '靠近棋盘中心掌握主动。' };
 }
 
 function getMatchStatus(state: GobangState): string {
@@ -381,19 +433,20 @@ export default function GobangRenderer() {
 
       try {
         if (mode === 'builtin:random') {
-          const action = pickAiMove(state, legal);
+          const result = pickBuiltinMove(state, legal);
           if (aiTicketRef.current !== ticket) return;
           setAiStatus(null);
-          applyAction(action, 'ai');
+          applyAction(result.action, 'ai', result.note);
           return;
         }
 
         if (requiresApiKey(mode) && !config.apiKey) {
-          const fallback = pickAiMove(state, legal);
+          const fallback = pickBuiltinMove(state, legal);
           if (aiTicketRef.current !== ticket) return;
           setAiStatus(null);
           setAiError(`${PLAYERS[currentPlayer].name} (${modeLabel}) 未配置 API Key，已使用内置随机 AI。`);
-          applyAction(fallback, 'ai', '未配置 API Key，改用内置随机 AI。');
+          const combinedNote = ['未配置 API Key，改用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+          applyAction(fallback.action, 'ai', combinedNote || undefined);
           return;
         }
 
@@ -405,11 +458,12 @@ export default function GobangRenderer() {
       } catch (error) {
         if (aiTicketRef.current !== ticket) return;
         console.error(error);
-        const fallback = pickAiMove(state, legal);
+        const fallback = pickBuiltinMove(state, legal);
         setAiStatus(null);
         const message = error instanceof Error ? error.message : String(error);
         setAiError(message || '外置 AI 调用失败，已回退到内置随机 AI。');
-        applyAction(fallback, 'ai', '外置 AI 调用失败，已使用内置随机 AI。');
+        const combinedNote = ['外置 AI 调用失败，已使用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+        applyAction(fallback.action, 'ai', combinedNote || undefined);
       }
     };
 

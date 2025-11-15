@@ -30,6 +30,15 @@ const PROVIDER_LABEL: Record<string, string> = {
   'ai:deepseek': 'DeepSeek',
 };
 
+const RULES_DESCRIPTION = [
+  '规则简介：',
+  '1. 棋盘为 15×15 的交叉点；',
+  '2. 黑方（玩家 0）先手，双方轮流在空交叉点落子；',
+  '3. 任意方向（横、竖、斜）连成五子立即获胜；',
+  '4. 禁止在已被占据的位置落子；',
+  '5. 合法落点列表已经根据规则过滤，请勿选择列表之外的坐标。',
+].join('\n');
+
 function providerLabel(provider: string): string {
   return PROVIDER_LABEL[provider] ?? provider;
 }
@@ -96,6 +105,7 @@ function buildPrompt(body: RequestBody, legalMoves: GobangAction[]): { system: s
     'Only respond with a strict JSON object: {"row":number,"col":number,"reason":"brief explanation"}.',
     'Rows and columns are 0-indexed from the top-left intersection.',
     'Choose only from the provided legal moves and favour winning/blocking critical threats.',
+    RULES_DESCRIPTION,
   ].join(' ');
 
   const boardSection = board.length
@@ -107,6 +117,7 @@ function buildPrompt(body: RequestBody, legalMoves: GobangAction[]): { system: s
     metadata,
     boardSection,
     `合法落点列表：${legalList}`,
+    '请遵循上述五子棋规则进行推理。',
     '请输出严格的 JSON，不要包含额外文字。',
   ]
     .filter(Boolean)
