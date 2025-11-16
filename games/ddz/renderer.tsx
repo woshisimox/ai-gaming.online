@@ -3,7 +3,6 @@ import { createContext, forwardRef, useCallback, useContext, useEffect, useImper
 import DonationWidget from '../../components/DonationWidget';
 import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
 import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
-import { TrueSkillArchivePanel } from '../../components/game-modules/TrueSkillArchivePanel';
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { PageSeoMeta } from '../../lib/seoConfig';
 import {
@@ -4598,17 +4597,6 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   );
 
   const seatIdentitiesMemo = useMemo(() => [0,1,2].map(seatIdentity), [seatIdentity]);
-  const tsArchivePlayers = useMemo(() => {
-    return [0, 1, 2].flatMap((idx) => {
-      const id = seatIdentity(idx);
-      const baseLabel = lang === 'en' ? `Seat ${seatLabel(idx, lang)}` : `${seatLabel(idx, lang)}席`;
-      return [
-        { id, label: lang === 'en' ? `${baseLabel} (overall)` : `${baseLabel}（总体）` },
-        { id, label: lang === 'en' ? `${baseLabel} (landlord)` : `${baseLabel}（地主）`, role: 'landlord' },
-        { id, label: lang === 'en' ? `${baseLabel} (farmer)` : `${baseLabel}（农民）`, role: 'farmer' },
-      ];
-    });
-  }, [lang, seatIdentity]);
   const seatDisplayNames = useMemo(
     () => seatIdentitiesMemo.map(id => (id ? thoughtLabelForIdentity(id) : '')),
     [seatIdentitiesMemo],
@@ -4622,7 +4610,6 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   // ===== 新增：TS 存档（读/写/应用） =====
   const tsStoreRef = useRef<TsStore>(emptyStore());
   useEffect(()=>{ try { tsStoreRef.current = readStore(); } catch {} }, []);
-  const fileRef = useRef<HTMLInputElement|null>(null);
 
   const resolveRatingForIdentity = (id: string, role?: TsRole): Rating | null => {
     const p = tsStoreRef.current.players[id]; if (!p) return null;
@@ -4708,16 +4695,6 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
 
   // —— 用于“区分显示”的帮助函数 —— //
   const fmt2 = (x:number)=> (Math.round(x*100)/100).toFixed(2);
-  const muSig = (r: Rating | null | undefined) => r ? `μ ${fmt2(r.mu)}｜σ ${fmt2(r.sigma)}` : '—';
-  const getStoredForSeat = (i:number) => {
-    const id = seatIdentity(i);
-    const p = tsStoreRef.current.players[id];
-    return {
-      overall: p?.overall ? ensureRating(p.overall) : null,
-      landlord: p?.roles?.landlord ? ensureRating(p.roles.landlord) : null,
-      farmer: p?.roles?.farmer ? ensureRating(p.roles.farmer) : null,
-    };
-  };
   /* ===== Radar（战术画像）本地存档（新增） ===== */
   type RadarAgg = { scores: Score5; count: number };
   type RadarStoreEntry = {
@@ -6589,95 +6566,6 @@ const handleAllSaveInner = () => {
         labelForIdentity={thoughtLabelForIdentity}
         lang={lang}
       />
-
-      {/* ========= TrueSkill（实时） ========= */}
-      <Section title="TrueSkill（实时）">
-        <TrueSkillArchivePanel
-          storeKey={TS_STORE_KEY}
-          schema={TS_STORE_SCHEMA}
-          exportName="ddz_trueskill"
-          players={tsArchivePlayers}
-          onApply={() => applyTsFromStoreByRole(landlordRef.current, '手动应用')}
-          onStoreChange={(store) => {
-            tsStoreRef.current = store;
-          }}
-        />
-        {/* 上传 / 存档 / 刷新 */}
-        <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-<div style={{ fontSize:12, color:'#6b7280' }}>按“内置/AI+模型/版本(+HTTP Base)”识别，并区分地主/农民。</div>
-        </div>
-
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-          {[0,1,2].map(i=>{
-            const stored = getStoredForSeat(i);
-            const usingRole: 'overall'|'landlord'|'farmer' =
-              landlord==null ? 'overall' : (landlord===i ? 'landlord' : 'farmer');
-            const seatIsHuman = isHumanSeat(i);
-            const timer = seatIsHuman ? null : botTimers[i];
-            let timerDisplay: ReactNode = null;
-            if (timer) {
-              const remainingMs = Math.max(0, timer.expiresAt - botClockTs);
-              const expired = remainingMs <= 0;
-              const seconds = Math.ceil(remainingMs / 1000);
-              const phaseLabel = timer.phase === 'bid'
-                ? (lang === 'en' ? 'Bidding' : '抢地主')
-                : timer.phase === 'double'
-                  ? (lang === 'en' ? 'Double' : '加倍')
-                  : (lang === 'en' ? 'Play' : '出牌');
-              const text = expired
-                ? (lang === 'en'
-                  ? 'Time expired. Waiting for auto action…'
-                  : '已超时，等待系统自动处理…')
-                : (lang === 'en'
-                  ? `Time left: ${seconds}s (${phaseLabel})`
-                  : `剩余时间：${seconds}秒（${phaseLabel}）`);
-              timerDisplay = (
-                <div style={{ fontSize:12, color: expired ? '#dc2626' : '#2563eb', marginBottom:6 }}>
-                  {text}
-                </div>
-              );
-            }
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:10 }}>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                {timerDisplay}
-                <div style={{ fontSize:13, color:'#374151' }}>
-                  <div>μ：<b>{fmt2(tsArr[i].mu)}</b></div>
-                  <div>σ：<b>{fmt2(tsArr[i].sigma)}</b></div>
-                  <div>CR = μ − 3σ：<b>{fmt2(tsCr(tsArr[i]))}</b></div>
-                </div>
-
-                {/* 区分显示总体/地主/农民三档，并标注当前使用 */}
-                <div style={{ borderTop:'1px dashed #eee', marginTop:8, paddingTop:8 }}>
-                  <div style={{ fontSize:12, marginBottom:6 }}>
-                    当前使用：<b>
-                      {usingRole === 'overall' ? '总体档' : usingRole === 'landlord' ? '地主档' : '农民档'}
-                    </b>
-                  </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, fontSize:12, color:'#374151' }}>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>总体</div>
-                      <div>{muSig(stored.overall)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>地主</div>
-                      <div>{muSig(stored.landlord)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>农民</div>
-                      <div>{muSig(stored.farmer)}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ fontSize:12, color:'#6b7280', marginTop:6 }}>
-          说明：CR 为置信下界（越高越稳）；每局结算后自动更新（也兼容后端直接推送 TS）。</div>
-      </Section>
 
       {/* ======= 积分下面、手牌上面：雷达图 ======= */}
       <Section title="战术画像（累计，0~5）">
