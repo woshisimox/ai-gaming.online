@@ -1759,7 +1759,13 @@ function LadderPanel() {
   const itemsByPlays = [...arr].sort((a,b)=> b.matches - a.matches);
   const maxPlays = itemsByPlays.reduce((m, it) => Math.max(m, it.matches || 0), 0);
 
-  const axisStyle:any = { position:'absolute', left:'50%', top:0, bottom:0, width:1, background:'#e5e7eb' };
+  const axisStyle:any = { position:'absolute', left:'50%', top:0, bottom:0, width:1, background:'#cbd5f5' };
+  const deltaGradientPositive = 'linear-gradient(90deg, #bbf7d0, #34d399 65%, #059669)';
+  const deltaGradientNegative = 'linear-gradient(270deg, #fecdd3, #f87171 60%, #dc2626)';
+  const deltaShadowPositive = '0 1px 2px rgba(16, 185, 129, 0.35)';
+  const deltaShadowNegative = '0 1px 2px rgba(244, 63, 94, 0.3)';
+  const playsGradient = 'linear-gradient(90deg, #bfdbfe, #60a5fa 50%, #1d4ed8)';
+  const playsShadow = '0 1px 2px rgba(37, 99, 235, 0.25)';
   const playsUnit = lang === 'en' ? 'games' : '局';
 
   return (
@@ -1777,9 +1783,20 @@ function LadderPanel() {
           return (
             <div key={it.id} style={{ display:'contents' }}>
               <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
-              <div style={{ position:'relative', height:16, background:'#f9fafb', border:'1px solid #f3f4f6', borderRadius:8 }}>
+              <div style={{ position:'relative', height:16, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8 }}>
                 <div style={axisStyle} />
-                <div style={{ position:'absolute', left: pos ? '50%' : `${50 - pct*50}%`, width: `${pct*50}%`, top:2, bottom:2, background: pos ? '#16a34a' : '#ef4444', borderRadius:6 }}/>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: pos ? '50%' : `${50 - pct * 50}%`,
+                    width: `${pct * 50}%`,
+                    top: 2,
+                    bottom: 2,
+                    background: pos ? deltaGradientPositive : deltaGradientNegative,
+                    borderRadius: 6,
+                    boxShadow: pos ? deltaShadowPositive : deltaShadowNegative,
+                  }}
+                />
               </div>
               <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right' }}>{it.val.toFixed(2)}</div>
             </div>
@@ -1799,8 +1816,19 @@ function LadderPanel() {
           return (
             <div key={`plays-${it.id}`} style={{ display:'contents' }}>
               <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
-              <div style={{ position:'relative', height:16, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8 }}>
-                <div style={{ position:'absolute', left:0, top:2, bottom:2, width:`${pct*100}%`, background:'#2563eb', borderRadius:6 }} />
+              <div style={{ position:'relative', height:16, background:'#eef2ff', border:'1px solid #cbd5f5', borderRadius:8 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 2,
+                    bottom: 2,
+                    width: `${pct * 100}%`,
+                    background: playsGradient,
+                    borderRadius: 6,
+                    boxShadow: playsShadow,
+                  }}
+                />
               </div>
               <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right', whiteSpace:'nowrap' }}>
                 {countText}
