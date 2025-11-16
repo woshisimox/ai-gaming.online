@@ -1,12 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { extractFirstJsonObject } from '../../../lib/bots/util';
+import {
+  chatProviderLabel,
+  isChatProvider,
+  requestChatCompletion,
+  type ChatProviderId,
+} from '../../../lib/external-ai/chatProviders';
 
 interface GobangAction {
   row: number;
   col: number;
 }
-
-type ProviderId = 'ai:openai' | 'ai:deepseek' | 'ai:kimi' | 'ai:qwen';
 
 interface MoveResponse {
   move: GobangAction;
@@ -25,13 +29,6 @@ interface RequestBody {
   player?: number;
 }
 
-const PROVIDER_LABEL: Record<string, string> = {
-  'ai:openai': 'OpenAI',
-  'ai:deepseek': 'DeepSeek',
-  'ai:kimi': 'Kimi',
-  'ai:qwen': 'Qwen',
-};
-
 const RULES_DESCRIPTION = [
   '规则简介：',
   '1. 棋盘为 15×15 的交叉点；',
@@ -40,10 +37,6 @@ const RULES_DESCRIPTION = [
   '4. 禁止在已被占据的位置落子；',
   '5. 合法落点列表已经根据规则过滤，请勿选择列表之外的坐标。',
 ].join('\n');
-
-function providerLabel(provider: string): string {
-  return PROVIDER_LABEL[provider] ?? provider;
-}
 
 function sanitizeLegalMoves(raw: any): GobangAction[] {
   if (!Array.isArray(raw)) return [];
@@ -128,188 +121,28 @@ function buildPrompt(body: RequestBody, legalMoves: GobangAction[]): { system: s
   return { system, user };
 }
 
-function resolveChatEndpoint(defaultBase: string, baseUrl: string | undefined): string {
-  const base = (baseUrl && baseUrl.trim().length > 0 ? baseUrl.trim() : defaultBase).replace(/\/$/, '');
-  return `${base}/v1/chat/completions`;
-}
-
-async function callOpenAI(
-  apiKey: string | undefined,
-  model: string | undefined,
-  system: string,
-  user: string,
-  baseUrl: string | undefined
-) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('未提供 OpenAI API Key');
-  }
-
-  const endpoint = resolveChatEndpoint('https://api.openai.com', baseUrl);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: (model && model.trim()) || 'gpt-4o-mini',
-      temperature: 0.1,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`OpenAI 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
-  }
-
-  const payload: any = await response.json();
-  const text = payload?.choices?.[0]?.message?.content ?? '';
-  return extractFirstJsonObject(String(text));
-}
-
-async function callDeepSeek(
-  apiKey: string | undefined,
-  model: string | undefined,
-  system: string,
-  user: string,
-  baseUrl: string | undefined
-) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('未提供 DeepSeek API Key');
-  }
-
-  const endpoint = resolveChatEndpoint('https://api.deepseek.com', baseUrl);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: (model && model.trim()) || 'deepseek-chat',
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-      stream: false,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`DeepSeek 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
-  }
-
-  const payload: any = await response.json();
-  const text = payload?.choices?.[0]?.message?.content ?? '';
-  return extractFirstJsonObject(String(text));
-}
-
-async function callKimi(
-  apiKey: string | undefined,
-  model: string | undefined,
-  system: string,
-  user: string,
-  baseUrl: string | undefined
-) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('未提供 Kimi API Key');
-  }
-
-  const endpoint = resolveChatEndpoint('https://api.moonshot.cn', baseUrl);
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: (model && model.trim()) || 'moonshot-v1-8k',
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Kimi 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
-  }
-
-  const payload: any = await response.json();
-  const text = payload?.choices?.[0]?.message?.content ?? '';
-  return extractFirstJsonObject(String(text));
-}
-
-async function callQwen(
-  apiKey: string | undefined,
-  model: string | undefined,
-  system: string,
-  user: string
-) {
-  if (!apiKey || !apiKey.trim()) {
-    throw new Error('未提供 Qwen API Key');
-  }
-
-  const response = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey.trim()}`,
-    },
-    body: JSON.stringify({
-      model: (model && model.trim()) || 'qwen-plus',
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Qwen 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
-  }
-
-  const payload: any = await response.json();
-  const text = payload?.choices?.[0]?.message?.content ?? '';
-  return extractFirstJsonObject(String(text));
-}
-
 async function resolveMove(body: RequestBody, legalMoves: GobangAction[]): Promise<MoveResponse> {
-  const provider = (body.provider || '').toLowerCase() as ProviderId;
+  const provider = (body.provider || '').toLowerCase() as ChatProviderId;
+  if (!isChatProvider(provider)) {
+    throw new Error('暂不支持的外置 AI 提供方');
+  }
   const { system, user } = buildPrompt(body, legalMoves);
 
-  let raw: any;
-  switch (provider) {
-    case 'ai:openai':
-      raw = await callOpenAI(body.apiKey, body.model, system, user, body.baseUrl);
-      break;
-    case 'ai:deepseek':
-      raw = await callDeepSeek(body.apiKey, body.model, system, user, body.baseUrl);
-      break;
-    case 'ai:kimi':
-      raw = await callKimi(body.apiKey, body.model, system, user, body.baseUrl);
-      break;
-    case 'ai:qwen':
-      raw = await callQwen(body.apiKey, body.model, system, user);
-      break;
-    default:
-      throw new Error('暂不支持的外置 AI 提供方');
-  }
+  const rawText = await requestChatCompletion({
+    provider,
+    apiKey: body.apiKey,
+    model: body.model,
+    baseUrl: body.baseUrl,
+    system,
+    user,
+    temperature: 0.2,
+  });
 
-  const fallbackLabel = `${providerLabel(provider)} 响应无效，已使用默认落点`;
-  const { move, reason } = ensureLegalMove(raw, legalMoves, fallbackLabel);
+  const parsed = extractFirstJsonObject(String(rawText));
+  const fallbackLabel = `${chatProviderLabel(provider)} 响应无效，已使用默认落点`;
+  const { move, reason } = ensureLegalMove(parsed, legalMoves, fallbackLabel);
   const trimmedReason = typeof reason === 'string' && reason.trim().length > 0 ? reason.trim().slice(0, 200) : undefined;
-  return { move, reason: trimmedReason, provider: providerLabel(provider) };
+  return { move, reason: trimmedReason, provider: chatProviderLabel(provider) };
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {

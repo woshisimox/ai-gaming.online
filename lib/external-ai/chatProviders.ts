@@ -1,0 +1,118 @@
+import { extractFirstJsonObject } from '../bots/util';
+
+export type ChatProviderId = 'ai:openai' | 'ai:deepseek' | 'ai:kimi' | 'ai:qwen';
+
+interface ProviderMeta {
+  id: ChatProviderId;
+  label: string;
+  defaultModel: string;
+  base: string;
+  allowBaseOverride?: boolean;
+}
+
+const PROVIDERS: Record<ChatProviderId, ProviderMeta> = {
+  'ai:openai': {
+    id: 'ai:openai',
+    label: 'OpenAI',
+    defaultModel: 'gpt-4o-mini',
+    base: 'https://api.openai.com',
+    allowBaseOverride: true,
+  },
+  'ai:deepseek': {
+    id: 'ai:deepseek',
+    label: 'DeepSeek',
+    defaultModel: 'deepseek-chat',
+    base: 'https://api.deepseek.com',
+    allowBaseOverride: true,
+  },
+  'ai:kimi': {
+    id: 'ai:kimi',
+    label: 'Kimi',
+    defaultModel: 'moonshot-v1-8k',
+    base: 'https://api.moonshot.cn',
+    allowBaseOverride: true,
+  },
+  'ai:qwen': {
+    id: 'ai:qwen',
+    label: 'Qwen',
+    defaultModel: 'qwen-plus',
+    base: 'https://dashscope.aliyuncs.com/compatible-mode',
+  },
+};
+
+export function chatProviderLabel(provider: string): string {
+  return PROVIDERS[provider as ChatProviderId]?.label ?? provider;
+}
+
+export function isChatProvider(value: any): value is ChatProviderId {
+  return Boolean(PROVIDERS[value as ChatProviderId]);
+}
+
+export interface ChatCompletionRequest {
+  provider: ChatProviderId;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  system: string;
+  user: string;
+  temperature?: number;
+}
+
+function resolveEndpoint(meta: ProviderMeta, baseUrl?: string): string {
+  if (meta.id === 'ai:qwen') {
+    return `${meta.base}/v1/chat/completions`;
+  }
+  const base = meta.allowBaseOverride && baseUrl ? baseUrl.trim().replace(/\/$/, '') : meta.base;
+  return `${base}/v1/chat/completions`;
+}
+
+export async function requestChatCompletion({
+  provider,
+  apiKey,
+  model,
+  baseUrl,
+  system,
+  user,
+  temperature = 0.2,
+}: ChatCompletionRequest): Promise<string> {
+  const meta = PROVIDERS[provider];
+  if (!meta) {
+    throw new Error('暂不支持的外置 AI 提供方');
+  }
+  const key = (apiKey || '').trim();
+  if (!key) {
+    throw new Error(`未提供 ${meta.label} API Key`);
+  }
+
+  const endpoint = resolveEndpoint(meta, baseUrl);
+  const body = {
+    model: (model && model.trim()) || meta.defaultModel,
+    temperature,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`${meta.label} 调用失败：HTTP ${response.status} ${text.slice(0, 160)}`);
+  }
+
+  const payload: any = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  return typeof content === 'string' ? content : JSON.stringify(payload?.choices?.[0] ?? {});
+}
+
+export function extractJsonFromCompletion(text: string): any | null {
+  return extractFirstJsonObject(text);
+}
