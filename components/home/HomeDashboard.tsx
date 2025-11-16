@@ -35,11 +35,6 @@ const LOCALES: Record<Lang, string> = {
 };
 
 type CopyBlock = {
-  heroTitle: string;
-  heroIntro: string;
-  heroItems: string[];
-  disclaimerTitle: string;
-  disclaimerBody: string;
   statsTimestamp: string;
   statsTitle: string;
   statsSubtitle: string;
@@ -74,16 +69,6 @@ type CopyBlock = {
 
 const COPY: Record<Lang, CopyBlock> = {
   zh: {
-    heroTitle: '开放式 AI 博弈实验室',
-    heroIntro: '统一的平台入口展示所有游戏的天梯、思考耗时与参赛局数，也提供微信打赏与免责声明等信息。',
-    heroItems: [
-      '平台仅用于 AI 对抗研究与教学演示，不构成任何竞技或赌博活动。',
-      '实时数据包含天梯、TrueSkill、思考耗时及局数，请合理解读。',
-      '使用外置 AI 需遵守各模型服务条款，所有 API Key 仅存储在本地浏览器。',
-    ],
-    disclaimerTitle: '免责声明',
-    disclaimerBody:
-      '平台所有统计与排行榜均来源于用户本地浏览器，可能因缓存或离线原因与实际训练结果存在差异；任何数据仅供研究参考。',
     statsTimestamp: '实时统计',
     statsTitle: '积分 / 天梯 / 耗时',
     statsSubtitle: '斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。',
@@ -116,17 +101,6 @@ const COPY: Record<Lang, CopyBlock> = {
     },
   },
   en: {
-    heroTitle: 'Open AI Gaming Lab',
-    heroIntro:
-      'The unified landing tab surfaces ladders, thinking latency, match totals, and donation / policy info for every integrated game.',
-    heroItems: [
-      'For AI-versus-AI research and teaching demos only—no gambling or competitive guarantees.',
-      'Live data covers ladders, TrueSkill, thinking latency, and match totals for every ruleset.',
-      'External AI integrations must follow each provider’s terms; all API keys stay inside your browser.',
-    ],
-    disclaimerTitle: 'Disclaimer',
-    disclaimerBody:
-      'All stats and leaderboards are stored locally in your browser and may differ from remote training results. Research use only.',
     statsTimestamp: 'LIVE STATS',
     statsTitle: 'Ratings · Ladder · Latency',
     statsSubtitle: 'Modular metrics for Dou Dizhu and Gomoku are aggregated here.',
@@ -436,42 +410,23 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
   return (
     <div className={styles.dashboard}>
       <section className={styles.section}>
-        <div className={styles.heroHeader}>
-          <div>
-            <p className={styles.timestamp}>AI GAMES HOME</p>
-            <h2 className={styles.heroTitle}>{copy.heroTitle}</h2>
-            <p className={styles.heroIntro}>{copy.heroIntro}</p>
+        <div className={styles.heroActions}>
+          <div className={styles.langToggle}>
+            {LANG_OPTIONS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setLang(option.id)}
+                className={`${styles.langButton} ${lang === option.id ? styles.langButtonActive : ''}`}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
-          <div className={styles.heroActions}>
-            <div className={styles.langToggle}>
-              {LANG_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setLang(option.id)}
-                  className={`${styles.langButton} ${lang === option.id ? styles.langButtonActive : ''}`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <SiteInfoButtons
-              lang={lang}
-              trailingNode={<DonationWidget lang={lang} className={styles.donationButton} />}
-            />
-          </div>
-        </div>
-        <ul className={styles.heroList}>
-          {copy.heroItems.map((item) => (
-            <li key={item} className={styles.heroListItem}>
-              <strong>•</strong>
-              {item}
-            </li>
-          ))}
-        </ul>
-        <div className={styles.disclaimer}>
-          <p style={{ fontWeight: 600, margin: '0 0 6px' }}>{copy.disclaimerTitle}</p>
-          <p style={{ margin: 0 }}>{copy.disclaimerBody}</p>
+          <SiteInfoButtons
+            lang={lang}
+            trailingNode={<DonationWidget lang={lang} className={styles.donationButton} />}
+          />
         </div>
       </section>
 

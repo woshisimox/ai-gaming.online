@@ -12,20 +12,6 @@
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
-.heroHeader {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-@media (min-width: 768px) {
-  .heroHeader {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-}
-
 .heroActions {
   display: flex;
   flex-direction: row;
@@ -72,57 +58,6 @@
 
 .donationButton {
   flex-shrink: 0;
-}
-
-.heroTitle {
-  font-size: 28px;
-  font-weight: 600;
-  color: #0f172a;
-  margin: 4px 0;
-}
-
-.heroIntro {
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.6;
-  margin: 8px 0 0;
-}
-
-.heroList {
-  margin: 24px 0 0;
-  display: grid;
-  gap: 12px;
-}
-
-@media (min-width: 768px) {
-  .heroList {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-.heroListItem {
-  background: #f8fafc;
-  border-radius: 18px;
-  padding: 16px;
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.5;
-}
-
-.heroListItem strong {
-  color: #0f172a;
-  margin-right: 6px;
-}
-
-.disclaimer {
-  margin-top: 24px;
-  border-radius: 18px;
-  border: 1px solid #fed7aa;
-  background: #fff7ed;
-  padding: 16px;
-  color: #9a3412;
-  line-height: 1.5;
-  font-size: 14px;
 }
 
 .sectionHeader {
