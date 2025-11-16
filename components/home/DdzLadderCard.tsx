@@ -101,9 +101,8 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
               <div className={styles.track}>
                 <div className={styles.zeroAxis} />
                 <div
-                  className={styles.deltaBar}
+                  className={`${styles.deltaBar} ${isPositive ? styles.deltaBarPositive : styles.deltaBarNegative}`}
                   style={{
-                    background: isPositive ? '#10b981' : '#f43f5e',
                     left: isPositive ? '50%' : `${50 - widthPct}%`,
                     right: isPositive ? `${50 - widthPct}%` : '50%',
                   }}
