@@ -1,8 +1,9 @@
 import Head from 'next/head';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GameDefinition, GameId } from '../games';
 import { GAME_REGISTRY, listGames } from '../games';
 import HomeDashboard from '../components/home/HomeDashboard';
+import { readSiteLanguage, subscribeSiteLanguage, type SiteLanguage } from '../lib/siteLanguage';
 
 type RendererComponent = () => JSX.Element;
 
@@ -16,14 +17,30 @@ export default function HomePage() {
   const games = useGameList();
   const defaultId = (games[0]?.id ?? 'ddz') as GameId;
   const [activeTab, setActiveTab] = useState<TabId>('home');
+  const [lang, setLang] = useState<SiteLanguage>(() => readSiteLanguage() ?? 'zh');
 
   const selectedGameId: GameId = (activeTab === 'home' ? defaultId : activeTab) as GameId;
   const current = GAME_REGISTRY[selectedGameId] ?? GAME_REGISTRY[defaultId];
   const Renderer = current?.renderer as RendererComponent | undefined;
 
+  useEffect(() => {
+    const initial = readSiteLanguage();
+    if (initial) {
+      setLang(initial);
+    }
+    const unsubscribe = subscribeSiteLanguage((next) => {
+      setLang(next);
+    });
+    return unsubscribe;
+  }, []);
+
+  const homeLabel = lang === 'zh' ? '首页' : 'Home';
   const tabs: Array<{ id: TabId; label: string; subtitle?: string }> = [
-    { id: 'home', label: '首页' },
-    ...games.map((game) => ({ id: game.id as GameId, label: game.displayName })),
+    { id: 'home', label: homeLabel },
+    ...games.map((game) => ({
+      id: game.id as GameId,
+      label: lang === 'zh' ? game.displayName : game.name || game.displayName,
+    })),
   ];
 
   return (
