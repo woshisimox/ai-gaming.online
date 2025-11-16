@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { GameDefinition, GameId } from '../../games';
 import DonationWidget from '../DonationWidget';
+import DdzLadderCard from './DdzLadderCard';
 import {
   readTrueSkillStore,
   resolveStoredRating,
@@ -114,8 +115,7 @@ function buildLadder(store: TrueSkillStore): LadderEntry[] {
       } as LadderEntry;
     })
     .filter((entry): entry is LadderEntry => Boolean(entry))
-    .sort((a, b) => b.cr - a.cr)
-    .slice(0, 5);
+    .sort((a, b) => b.cr - a.cr);
 }
 
 function buildLatencySummary(store: LatencyStore): { avg: number | null; samples: number } {
@@ -167,64 +167,41 @@ function formatTimestamp(value?: string): string {
   }
 }
 
-function StatsCard({ game, snapshot, onSelectGame }: { game: GameDefinition; snapshot?: GameStatsSnapshot; onSelectGame: (id: GameId) => void }) {
-  const ladder = snapshot?.ladder ?? [];
-  return (
-    <div className="flex h-full flex-col rounded-2xl border border-slate-200 bg-white/80 p-6 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">实时数据</p>
-          <h3 className="mt-1 text-xl font-semibold text-slate-900">{game.displayName}</h3>
-          {game.description ? <p className="mt-1 text-sm text-slate-600">{game.description}</p> : null}
-        </div>
-        <button
-          type="button"
-          onClick={() => onSelectGame(game.id as GameId)}
-          className="rounded-full border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
-        >
-          进入
-        </button>
+function GobangTrueSkillCard({ ladder }: { ladder: LadderEntry[] }) {
+  if (!ladder.length) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-sm text-slate-500">
+        暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。
       </div>
-
-      <dl className="mt-6 grid grid-cols-1 gap-4 text-sm text-slate-600 sm:grid-cols-3">
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">累计局数</dt>
-          <dd className="mt-1 text-2xl font-semibold text-slate-900">{snapshot ? formatNumber(snapshot.totalMatches) : '—'}</dd>
-          {snapshot?.matchDetail ? (
-            <p className="mt-1 text-xs text-slate-500">{snapshot.matchDetail}</p>
-          ) : null}
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">平均耗时</dt>
-          <dd className="mt-1 text-2xl font-semibold text-slate-900">
-            {snapshot?.latencyAvg != null ? `${Math.round(snapshot.latencyAvg)} ms` : '—'}
-          </dd>
-          <p className="mt-1 text-xs text-slate-500">样本 {snapshot ? formatNumber(snapshot.latencySamples) : '—'}</p>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">天梯选手</dt>
-          <dd className="mt-1 text-2xl font-semibold text-slate-900">{snapshot ? formatNumber(snapshot.playerCount) : '—'}</dd>
-          <p className="mt-1 text-xs text-slate-500">更新 {formatTimestamp(snapshot?.ladderUpdatedAt)}</p>
-        </div>
-      </dl>
-
-      <div className="mt-6 flex-1 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">天梯（CR）</p>
-        <ul className="mt-3 space-y-2">
-          {ladder.length ? (
-            ladder.map((entry, index) => (
-              <li key={`${entry.label}-${index}`} className="flex items-center justify-between text-sm text-slate-700">
-                <span>
-                  <span className="font-semibold text-slate-900">{index + 1}.</span> {entry.label}
-                </span>
-                <span className="font-mono text-slate-900">{entry.cr.toFixed(1)}</span>
-              </li>
-            ))
-          ) : (
-            <li className="text-sm text-slate-500">暂无天梯数据</li>
-          )}
-        </ul>
-        <p className="mt-3 text-xs text-slate-500">最新耗时更新 {formatTimestamp(snapshot?.latencyUpdatedAt)}</p>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-900">TrueSkill 天梯</p>
+        <p className="text-xs text-slate-500">按 CR 排序（μ - 3σ），实时展示双方总评级。</p>
+      </div>
+      <div className="max-h-80 overflow-auto">
+        <table className="min-w-full divide-y divide-slate-100 text-sm">
+          <thead className="bg-slate-50 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+            <tr>
+              <th className="px-4 py-2">选手</th>
+              <th className="px-4 py-2 text-right">μ</th>
+              <th className="px-4 py-2 text-right">σ</th>
+              <th className="px-4 py-2 text-right">CR</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {ladder.map((entry) => (
+              <tr key={entry.label}>
+                <td className="px-4 py-2 font-medium text-slate-900">{entry.label}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-700">{entry.mu.toFixed(2)}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-700">{entry.sigma.toFixed(2)}</td>
+                <td className="px-4 py-2 text-right font-mono text-slate-900">{entry.cr.toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -232,6 +209,7 @@ function StatsCard({ game, snapshot, onSelectGame }: { game: GameDefinition; sna
 
 export default function HomeDashboard({ games, onSelectGame }: Props) {
   const [snapshots, setSnapshots] = useState<Partial<Record<GameId, GameStatsSnapshot>>>({});
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const refreshStats = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -259,6 +237,7 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
       });
       return next;
     });
+    setRefreshToken((token) => token + 1);
   }, [games]);
 
   useEffect(() => {
@@ -313,8 +292,8 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">实时统计</p>
-            <h2 className="mt-1 text-2xl font-semibold text-slate-900">各游戏天梯 / 耗时 / 局数</h2>
-            <p className="text-sm text-slate-600">数据自动每 2.5 秒刷新，可随时点击下方按钮进入对应竞赛页面。</p>
+            <h2 className="mt-1 text-2xl font-semibold text-slate-900">积分 / 天梯 / 耗时</h2>
+            <p className="text-sm text-slate-600">斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。</p>
           </div>
           <button
             type="button"
@@ -324,15 +303,103 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             手动刷新
           </button>
         </div>
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
-          {games.map((game) => (
-            <StatsCard
-              key={game.id}
-              game={game}
-              snapshot={snapshots[game.id as GameId]}
-              onSelectGame={onSelectGame}
-            />
-          ))}
+
+        <div className="mt-8 space-y-8">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-6 shadow-inner">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">斗地主</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">积分榜 / 累计局数</h3>
+                <p className="text-sm text-slate-600">与对局界面一致的积分排行、局数统计与耗时概览。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectGame('ddz' as GameId)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              >
+                进入斗地主
+              </button>
+            </div>
+            <dl className="mt-4 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">累计局数</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {formatNumber(snapshots.ddz?.totalMatches ?? null)}
+                </dd>
+                {snapshots.ddz?.matchDetail ? (
+                  <p className="mt-1 text-xs text-slate-500">{snapshots.ddz.matchDetail}</p>
+                ) : null}
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">平均耗时</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {snapshots.ddz?.latencyAvg != null ? `${Math.round(snapshots.ddz.latencyAvg)} ms` : '—'}
+                </dd>
+                <p className="mt-1 text-xs text-slate-500">
+                  样本 {formatNumber(snapshots.ddz?.latencySamples ?? null)}
+                </p>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">天梯选手</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {formatNumber(snapshots.ddz?.playerCount ?? null)}
+                </dd>
+                <p className="mt-1 text-xs text-slate-500">更新 {formatTimestamp(snapshots.ddz?.ladderUpdatedAt)}</p>
+              </div>
+            </dl>
+
+            <div className="mt-6">
+              <DdzLadderCard refreshToken={refreshToken} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-6 shadow-inner">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">五子棋</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-900">TrueSkill / 对局统计</h3>
+                <p className="text-sm text-slate-600">展示黑白双方累计胜负、TrueSkill 排名与平均耗时。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onSelectGame('gobang' as GameId)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              >
+                进入五子棋
+              </button>
+            </div>
+            <dl className="mt-4 grid gap-4 text-sm text-slate-600 sm:grid-cols-3">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">累计局数</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {formatNumber(snapshots.gobang?.totalMatches ?? null)}
+                </dd>
+                {snapshots.gobang?.matchDetail ? (
+                  <p className="mt-1 text-xs text-slate-500">{snapshots.gobang.matchDetail}</p>
+                ) : null}
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">平均耗时</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {snapshots.gobang?.latencyAvg != null ? `${Math.round(snapshots.gobang.latencyAvg)} ms` : '—'}
+                </dd>
+                <p className="mt-1 text-xs text-slate-500">
+                  样本 {formatNumber(snapshots.gobang?.latencySamples ?? null)}
+                </p>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-slate-500">天梯选手</dt>
+                <dd className="mt-1 text-2xl font-semibold text-slate-900">
+                  {formatNumber(snapshots.gobang?.playerCount ?? null)}
+                </dd>
+                <p className="mt-1 text-xs text-slate-500">更新 {formatTimestamp(snapshots.gobang?.ladderUpdatedAt)}</p>
+              </div>
+            </dl>
+
+            <div className="mt-6">
+              <GobangTrueSkillCard ladder={snapshots.gobang?.ladder ?? []} />
+            </div>
+          </div>
         </div>
       </section>
     </div>
