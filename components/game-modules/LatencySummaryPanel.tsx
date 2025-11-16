@@ -99,7 +99,7 @@ export function LatencySummaryPanel({
                 style={{
                   position: 'relative',
                   height: 18,
-                  background: '#e2e8f0',
+                  background: 'linear-gradient(90deg, #f0f9ff, #e0f2fe)',
                   borderRadius: 9999,
                   overflow: 'hidden',
                   border: '1px solid #cbd5f5',
@@ -110,9 +110,10 @@ export function LatencySummaryPanel({
                     position: 'absolute',
                     inset: 0,
                     width: `${pct * 100}%`,
-                    background: '#38bdf8',
+                    background: 'linear-gradient(90deg, #bae6fd, #38bdf8 55%, #0284c7)',
                     transition: 'width 0.3s ease',
                     borderRadius: 9999,
+                    boxShadow: '0 1px 2px rgba(14, 165, 233, 0.25)',
                   }}
                 />
               </div>
