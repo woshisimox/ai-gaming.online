@@ -267,8 +267,10 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             </p>
           </div>
           <div className={styles.heroActions}>
-            <DonationWidget lang="zh" className={styles.donationButton} />
-            <SiteInfoButtons lang="zh" />
+            <SiteInfoButtons
+              lang="zh"
+              trailingNode={<DonationWidget lang="zh" className={styles.donationButton} />}
+            />
           </div>
         </div>
         <ul className={styles.heroList}>

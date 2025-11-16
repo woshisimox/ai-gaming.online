@@ -89,9 +89,10 @@ function resolveLabels(lang: SiteInfoLang) {
 
 type Props = {
   lang?: SiteInfoLang;
+  trailingNode?: ReactNode;
 };
 
-export default function SiteInfoButtons({ lang = 'zh' }: Props) {
+export default function SiteInfoButtons({ lang = 'zh', trailingNode }: Props) {
   const [activeModal, setActiveModal] = useState<ModalType>(null);
   const labels = useMemo(() => resolveLabels(lang), [lang]);
   const disclaimerContent = useMemo(() => DISCLAIMER_CONTENT[lang] ?? DISCLAIMER_CONTENT.zh, [lang]);
@@ -251,6 +252,7 @@ export default function SiteInfoButtons({ lang = 'zh' }: Props) {
         <button type="button" className={`${styles.button} ${styles.blog}`} onClick={() => setActiveModal('blog')}>
           {labels.blog}
         </button>
+        {trailingNode ? <div className={styles.trailingSlot}>{trailingNode}</div> : null}
       </div>
       {modalNode}
     </>

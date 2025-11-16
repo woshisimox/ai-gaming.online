@@ -6,6 +6,12 @@
   justify-content: flex-end;
 }
 
+.trailingSlot {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+}
+
 .button {
   padding: 6px 16px;
   border-radius: 999px;
