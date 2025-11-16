@@ -1,6 +1,9 @@
 // games/ddz/renderer.tsx
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import DonationWidget from '../../components/DonationWidget';
+import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
+import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
+import { TrueSkillArchivePanel } from '../../components/game-modules/TrueSkillArchivePanel';
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { PageSeoMeta } from '../../lib/seoConfig';
 import {
@@ -2442,93 +2445,6 @@ function LadderPanel() {
               </div>
               <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right', whiteSpace:'nowrap' }}>
                 {countText}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-type ThoughtSummaryPanelProps = { stats: ThoughtStore | null; lastMs: (number | null)[]; identities: string[]; lang: Lang };
-
-function ThoughtSummaryPanel({ stats, lastMs, identities, lang }: ThoughtSummaryPanelProps) {
-  const latest = new Map<string, { ms: number | null; seat: number }>();
-  identities.forEach((id, idx) => {
-    if (!id) return;
-    const val = Array.isArray(lastMs) ? lastMs[idx] ?? null : null;
-    latest.set(id, { ms: val, seat: idx });
-  });
-
-  const players = stats?.players || {};
-  const identityList = Array.from(new Set([...(stats ? Object.keys(players) : []), ...DEFAULT_THOUGHT_CATALOG_IDS]));
-  const items = identityList.map(id => {
-    const raw = players[id];
-    const mean = Number(raw?.mean) || 0;
-    const count = Math.max(0, Number(raw?.count) || 0);
-    const label = (typeof raw?.label === 'string' && raw.label.trim()) ? raw.label.trim() : thoughtLabelForIdentity(id);
-    const lastEntry = latest.get(id) || null;
-    return { id, label, mean, count, lastEntry };
-  });
-
-  items.sort((a, b) => {
-    const aHas = a.count > 0;
-    const bHas = b.count > 0;
-    if (aHas && bHas) {
-      if (a.mean !== b.mean) return a.mean - b.mean;
-      return a.label.localeCompare(b.label);
-    }
-    if (aHas) return -1;
-    if (bHas) return 1;
-    return a.label.localeCompare(b.label);
-  });
-
-  const maxMean = Math.max(0, ...items.filter(it => it.count > 0).map(it => it.mean));
-  const scale = maxMean > 0 ? maxMean : 1;
-  const title = lang === 'en' ? 'Thought time by identity' : '思考耗时（按身份）';
-  const subtitle = lang === 'en'
-    ? 'X-axis = running average thought time (ms); sorted by shortest first'
-    : '横轴=累计平均思考时长（毫秒），按耗时从短到长排序';
-  const fmt = (v:number|null) => {
-    if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
-    if (v >= 1000) return v.toFixed(0);
-    return v.toFixed(1);
-  };
-  const countLabel = lang === 'en' ? 'n=' : '次数=';
-  const lastLabel = lang === 'en' ? 'Latest' : '最近';
-  const seatLabelPrefix = lang === 'en' ? 'Seat ' : '座位';
-  const colon = lang === 'en' ? ': ' : '：';
-  const barColor = '#60a5fa';
-  const layoutStyle = { display:'grid', gridTemplateColumns:'200px 1fr 80px 140px', gap:8, rowGap:10 } as const;
-  const wrapSeatTag = (tag:string) => {
-    if (!tag) return '';
-    return lang === 'en' ? ` (${seatLabelPrefix}${tag})` : `（${seatLabelPrefix}${tag}）`;
-  };
-
-  return (
-    <div style={{ border:'1px dashed #e5e7eb', borderRadius:8, padding:'12px 14px', marginBottom:12, background:'#f9fafb' }}>
-      <div style={{ fontWeight:700, marginBottom:2 }}>{title}</div>
-      <div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>{subtitle}</div>
-      <div style={layoutStyle}>
-        {items.map(item => {
-          const pct = item.count > 0 ? Math.min(1, item.mean / scale || 0) : 0;
-          const last = item.lastEntry;
-          const seatTag = last ? `${seatLabel(last.seat, lang)}` : '';
-          const lastValue = last ? last.ms : null;
-          return (
-            <div key={item.id} style={{ display:'contents' }}>
-              <div style={{ fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{item.label}</div>
-              <div style={{ position:'relative', height:18, background:'#e5e7eb33', borderRadius:9999, overflow:'hidden', border:'1px solid #e5e7eb' }}>
-                <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${pct*100}%`, background:barColor, transition:'width 0.3s ease', borderRadius:9999 }} />
-              </div>
-              <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right' }}>{item.count > 0 ? `${fmt(item.mean)} ms` : '—'}</div>
-              <div style={{ fontSize:12, color:'#374151' }}>
-                <div>{countLabel}{item.count}</div>
-                <div>
-                  {lastLabel}{colon}{lastValue != null ? `${fmt(lastValue)} ms` : '—'}
-                  {wrapSeatTag(seatTag)}
-                </div>
               </div>
             </div>
           );
@@ -5293,6 +5209,17 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   }, [lang, seatIdentity, setLog]);
 
   const seatIdentitiesMemo = useMemo(() => [0,1,2].map(seatIdentity), [seatIdentity]);
+  const tsArchivePlayers = useMemo(() => {
+    return [0, 1, 2].flatMap((idx) => {
+      const id = seatIdentity(idx);
+      const baseLabel = lang === 'en' ? `Seat ${seatLabel(idx, lang)}` : `${seatLabel(idx, lang)}席`;
+      return [
+        { id, label: lang === 'en' ? `${baseLabel} (overall)` : `${baseLabel}（总体）` },
+        { id, label: lang === 'en' ? `${baseLabel} (landlord)` : `${baseLabel}（地主）`, role: 'landlord' },
+        { id, label: lang === 'en' ? `${baseLabel} (farmer)` : `${baseLabel}（农民）`, role: 'farmer' },
+      ];
+    });
+  }, [lang, seatIdentity]);
   const seatDisplayNames = useMemo(
     () => seatIdentitiesMemo.map(id => (id ? thoughtLabelForIdentity(id) : '')),
     [seatIdentitiesMemo],
@@ -7247,10 +7174,27 @@ const handleAllSaveInner = () => {
       <div>
       {controlsNode}
 
-      <ThoughtSummaryPanel stats={thoughtStore} lastMs={lastThoughtMs} identities={seatIdentitiesMemo} lang={lang} />
+      <LatencySummaryPanel
+        store={thoughtStore}
+        lastMs={lastThoughtMs}
+        identities={seatIdentitiesMemo}
+        defaultCatalog={DEFAULT_THOUGHT_CATALOG_IDS}
+        labelForIdentity={thoughtLabelForIdentity}
+        lang={lang}
+      />
 
       {/* ========= TrueSkill（实时） ========= */}
       <Section title="TrueSkill（实时）">
+        <TrueSkillArchivePanel
+          storeKey={TS_STORE_KEY}
+          schema={TS_STORE_SCHEMA}
+          exportName="ddz_trueskill"
+          players={tsArchivePlayers}
+          onApply={() => applyTsFromStoreByRole(landlordRef.current, '手动应用')}
+          onStoreChange={(store) => {
+            tsStoreRef.current = store;
+          }}
+        />
         {/* 上传 / 存档 / 刷新 */}
         <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
 <div style={{ fontSize:12, color:'#6b7280' }}>按“内置/AI+模型/版本(+HTTP Base)”识别，并区分地主/农民。</div>
@@ -7889,6 +7833,138 @@ const [lang, setLang] = useState<Lang>(() => {
   const [seats, setSeats] = useState<BotChoice[]>(DEFAULTS.seats);
   const [seatModels, setSeatModels] = useState<string[]>(DEFAULTS.seatModels);
   const [seatKeys, setSeatKeys] = useState(DEFAULTS.seatKeys);
+  const seatPanelConfigs = useMemo(
+    () => seats.map((mode, idx) => ({ mode, model: seatModels[idx], keys: seatKeys[idx] || {} })),
+    [seats, seatModels, seatKeys],
+  );
+  const seatOptionGroups = useMemo(
+    () => [
+      {
+        label: lang === 'en' ? 'Built-in' : '内置',
+        options: [
+          { value: 'built-in:greedy-max', label: 'Greedy Max' },
+          { value: 'built-in:greedy-min', label: 'Greedy Min' },
+          { value: 'built-in:random-legal', label: 'Random Legal' },
+          { value: 'built-in:mininet', label: 'MiniNet' },
+          { value: 'built-in:ally-support', label: 'AllySupport' },
+          { value: 'built-in:endgame-rush', label: 'EndgameRush' },
+          { value: 'built-in:advanced-hybrid', label: 'Advanced Hybrid' },
+        ],
+      },
+      {
+        label: lang === 'en' ? 'AI / External' : 'AI / 外置',
+        options: [
+          { value: 'ai:openai', label: 'OpenAI' },
+          { value: 'ai:gemini', label: 'Gemini' },
+          { value: 'ai:grok', label: 'Grok' },
+          { value: 'ai:kimi', label: 'Kimi' },
+          { value: 'ai:qwen', label: 'Qwen' },
+          { value: 'ai:deepseek', label: 'DeepSeek' },
+          { value: 'http', label: 'HTTP' },
+        ],
+      },
+      {
+        label: lang === 'en' ? 'Human' : '人类选手',
+        options: [{ value: 'human', label: humanOptionLabel }],
+      },
+    ],
+    [lang, humanOptionLabel],
+  );
+  const handleSeatModeChange = useCallback((index: number, nextMode: string) => {
+    const choice = nextMode as BotChoice;
+    setSeats((arr) => {
+      const copy = [...arr];
+      copy[index] = choice;
+      return copy;
+    });
+    setSeatModels((arr) => {
+      const copy = [...arr];
+      copy[index] = defaultModelFor(choice);
+      return copy;
+    });
+  }, []);
+  const renderSeatFields = useCallback(
+    (i: number) => {
+      const choice = seats[i];
+      const blocks: ReactNode[] = [];
+      if (choice.startsWith('ai:')) {
+        blocks.push(
+          <label key={`model-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            模型（可选）
+            <input
+              type="text"
+              value={seatModels[i]}
+              placeholder={defaultModelFor(choice)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatModels((arr) => {
+                  const next = [...arr];
+                  next[i] = v;
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>留空则使用推荐：{defaultModelFor(choice)}</div>
+          </label>,
+        );
+      }
+      const pushKeyField = (
+        key: keyof (typeof seatKeys)[number],
+        label: string,
+        type: 'text' | 'password' = 'password',
+      ) => {
+        const safeKey = String(key);
+        return (
+          <label key={`${safeKey}-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            {label}
+            <input
+              type={type}
+              value={(seatKeys[i]?.[key] as string) || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), [key]: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+            />
+          </label>
+        );
+      };
+      if (choice === 'ai:openai') blocks.push(pushKeyField('openai', 'OpenAI API Key'));
+      if (choice === 'ai:gemini') blocks.push(pushKeyField('gemini', 'Gemini API Key'));
+      if (choice === 'ai:grok') blocks.push(pushKeyField('grok', 'xAI (Grok) API Key'));
+      if (choice === 'ai:kimi') blocks.push(pushKeyField('kimi', 'Kimi API Key'));
+      if (choice === 'ai:qwen') blocks.push(pushKeyField('qwen', 'Qwen API Key'));
+      if (choice === 'ai:deepseek') blocks.push(pushKeyField('deepseek', 'DeepSeek API Key'));
+      if (choice === 'http') {
+        blocks.push(
+          <label key={`http-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            HTTP Base / URL
+            <input
+              type="text"
+              value={seatKeys[i]?.httpBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), httpBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+            />
+          </label>,
+        );
+        blocks.push(pushKeyField('httpToken', 'HTTP Token（可选）'));
+      }
+      return <>{blocks}</>;
+    },
+    [seats, seatModels, seatKeys],
+  );
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
   const [disclaimerOpen, setDisclaimerOpen] = useState(false);
   const [developerJoinOpen, setDeveloperJoinOpen] = useState(false);
@@ -8298,165 +8374,20 @@ const [lang, setLang] = useState<Lang>(() => {
         </div>
 
         <div style={{ marginTop:10, borderTop:'1px dashed #eee', paddingTop:10 }}>
-          <div style={{ fontWeight:700, marginBottom:6 }}>每家 AI 设置（独立）</div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-            {[0,1,2].map(i=>(
-              <div key={i} style={{ border:'1px dashed #ccc', borderRadius:8, padding:10 }}>
-                <div style={{ marginBottom:8 }}><SeatTitle i={i} /></div>
-
-                <label style={{ display:'block', marginBottom:6 }}>
-                  选择
-                  <select
-                    value={seats[i]}
-                    onChange={e=>{
-                      const v = e.target.value as BotChoice;
-                      setSeats(arr => { const n=[...arr]; n[i] = v; return n; });
-                      // 新增：切换提供商时，把当前输入框改成该提供商的推荐模型
-                      setSeatModels(arr => { const n=[...arr]; n[i] = defaultModelFor(v); return n; });
-                    }}
-                    style={{ width:'100%' }}
-                  >
-                    <optgroup label={lang === 'en' ? 'Built-in' : '内置'}>
-                      <option value="built-in:greedy-max">Greedy Max</option>
-                      <option value="built-in:greedy-min">Greedy Min</option>
-                      <option value="built-in:random-legal">Random Legal</option>
-                      <option value="built-in:mininet">MiniNet</option>
-                      <option value="built-in:ally-support">AllySupport</option>
-                      <option value="built-in:endgame-rush">EndgameRush</option>
-                      <option value="built-in:advanced-hybrid">Advanced Hybrid</option>
-                    </optgroup>
-                    <optgroup label={lang === 'en' ? 'AI / External' : 'AI / 外置'}>
-                      <option value="ai:openai">OpenAI</option>
-                      <option value="ai:gemini">Gemini</option>
-                      <option value="ai:grok">Grok</option>
-                      <option value="ai:kimi">Kimi</option>
-                      <option value="ai:qwen">Qwen</option>
-                      <option value="ai:deepseek">DeepSeek</option>
-                      <option value="http">HTTP</option>
-                    </optgroup>
-                    <optgroup label={lang === 'en' ? 'Human' : '人类选手'}>
-                      <option value="human">{humanOptionLabel}</option>
-                    </optgroup>
-                  </select>
-                </label>
-
-                {seats[i].startsWith('ai:') && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    模型（可选）
-                    <input
-                      type="text"
-                      value={seatModels[i]}
-                      placeholder={defaultModelFor(seats[i])}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatModels(arr => { const n=[...arr]; n[i] = v; return n; });
-                      }}
-                      style={{ width:'100%' }}
-                    />
-                    <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
-                      留空则使用推荐：{defaultModelFor(seats[i])}
-                    </div>
-                  </label>
-                )}
-
-                {seats[i] === 'ai:openai' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    OpenAI API Key
-                    <input type="password" value={seatKeys[i]?.openai||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), openai:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:gemini' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Gemini API Key
-                    <input type="password" value={seatKeys[i]?.gemini||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), gemini:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:grok' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    xAI (Grok) API Key
-                    <input type="password" value={seatKeys[i]?.grok||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), grok:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:kimi' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Kimi API Key
-                    <input type="password" value={seatKeys[i]?.kimi||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), kimi:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:qwen' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Qwen API Key
-                    <input type="password" value={seatKeys[i]?.qwen||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), qwen:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:deepseek' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    DeepSeek API Key
-                    <input type="password" value={seatKeys[i]?.deepseek||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), deepseek:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'http' && (
-                  <>
-                    <label style={{ display:'block', marginBottom:6 }}>
-                      HTTP Base / URL
-                      <input type="text" value={seatKeys[i]?.httpBase||''}
-                        onChange={e=>{
-                          const v = e.target.value;
-                          setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), httpBase:v }; return n; });
-                        }}
-                        style={{ width:'100%' }} />
-                    </label>
-                    <label style={{ display:'block', marginBottom:6 }}>
-                      HTTP Token（可选）
-                      <input type="password" value={seatKeys[i]?.httpToken||''}
-                        onChange={e=>{
-                          const v = e.target.value;
-                          setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), httpToken:v }; return n; });
-                        }}
-                        style={{ width:'100%' }} />
-                    </label>
-                  </>
-                )}
+          <PlayerConfigPanel
+            title="每家 AI 设置（独立）"
+            players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
+            configs={seatPanelConfigs}
+            optionGroups={seatOptionGroups}
+            getMode={(config) => config?.mode}
+            onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
+            renderMeta={(index) => (
+              <div style={{ fontSize:12, color:'#4b5563' }}>
+                当前：{choiceLabel(seats[index])}
               </div>
-            ))}
-          </div>
+            )}
+            renderFields={(index) => renderSeatFields(index)}
+          />
 
           <div style={{ marginTop:12 }}>
             <div style={{ fontWeight:700, marginBottom:6 }}>每家出牌最小间隔 (ms)</div>

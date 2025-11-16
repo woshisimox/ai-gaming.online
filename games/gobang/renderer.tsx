@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
 import type { GobangAction, GobangState } from './game';
 import { gobangEngine } from './game';
 import styles from './renderer.module.css';
@@ -13,8 +12,6 @@ import {
   readTrueSkillStore,
   writeTrueSkillStore,
   tsUpdateTwoTeams,
-  importTrueSkillArchive,
-  formatTrueSkillArchiveName,
   type TrueSkillStore,
 } from '../../lib/game-modules/trueSkill';
 import {
@@ -25,6 +22,9 @@ import {
   updateLatencyStats,
 } from '../../lib/game-modules/latencyStore';
 import { readPlayerConfigs, writePlayerConfigs } from '../../lib/game-modules/playerConfigStore';
+import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
+import { TrueSkillArchivePanel } from '../../components/game-modules/TrueSkillArchivePanel';
+import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
 
 const BOARD_SIZE = gobangEngine.initialState().data.board.length;
 
@@ -348,7 +348,6 @@ export default function GobangRenderer() {
     const identities = baseConfigs.map((config, index) => ({ id: buildPlayerIdentity(config, index).id }));
     return applyRatingsFromStore(tsStoreRef.current ?? createTrueSkillStore(TS_SCHEMA), identities);
   });
-  const tsFileRef = useRef<HTMLInputElement | null>(null);
   const [latencyStore, setLatencyStore] = useState<LatencyStore>(() =>
     readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA),
   );
@@ -356,6 +355,14 @@ export default function GobangRenderer() {
   useEffect(() => { latencyStoreRef.current = latencyStore; }, [latencyStore]);
   const [lastLatency, setLastLatency] = useState<Array<number | null>>([null, null]);
   const lastRecordedTurnRef = useRef<number | null>(null);
+  const playerIdentities = useMemo(
+    () =>
+      [0, 1].map((index) => ({
+        ...buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index),
+        role: index === 0 ? 'black' : 'white',
+      })),
+    [playerConfigs],
+  );
 
   const legalMoves = useMemo(() => {
     if (state.status !== 'running') {
@@ -378,17 +385,22 @@ export default function GobangRenderer() {
     return tsStoreRef.current;
   }, []);
 
-  const applyStoredRatings = useCallback(() => {
-    const identities = [0, 1].map((index) => ({
-      id: buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index).id,
-    }));
-    const store = ensureTsStore();
-    setTsRatings(applyRatingsFromStore(store, identities));
-  }, [ensureTsStore, playerConfigs]);
-
   useEffect(() => {
-    applyStoredRatings();
-  }, [applyStoredRatings]);
+    const store = ensureTsStore();
+    setTsRatings(applyRatingsFromStore(store, playerIdentities));
+  }, [ensureTsStore, playerIdentities]);
+
+  const handleApplyTsStore = useCallback(
+    (store: TrueSkillStore) => {
+      tsStoreRef.current = store;
+      setTsRatings(applyRatingsFromStore(store, playerIdentities));
+    },
+    [playerIdentities],
+  );
+
+  const handleTsStoreChange = useCallback((store: TrueSkillStore) => {
+    tsStoreRef.current = store;
+  }, []);
 
   useEffect(() => {
     if (state.status !== 'finished' || state.data.winner == null) return;
@@ -526,35 +538,6 @@ export default function GobangRenderer() {
     [playerConfigs],
   );
 
-  const handleTsExport = useCallback(() => {
-    const store = ensureTsStore();
-    const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = formatTrueSkillArchiveName('gobang_trueskill');
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }, [ensureTsStore]);
-
-  const handleTsUpload = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        const text = await file.text();
-        const store = importTrueSkillArchive(text, TS_SCHEMA);
-        tsStoreRef.current = store;
-        writeTrueSkillStore(TS_STORE_KEY, store);
-        applyStoredRatings();
-      } catch (error: any) {
-        setAiError(error?.message || 'TrueSkill 存档导入失败');
-      } finally {
-        event.target.value = '';
-      }
-    },
-    [applyStoredRatings],
-  );
 
   const updatePlayerConfig = useCallback((index: 0 | 1, update: Partial<PlayerConfig>) => {
     setPlayerConfigs((previous) => {
@@ -842,27 +825,7 @@ export default function GobangRenderer() {
                   <span className={styles.confidence}>{formatConfidence(tsRatings[0])}</span>
                   <span className={styles.badge}>先手</span>
                 </div>
-                <select
-                  aria-label="Player 1 mode"
-                  value={playerConfigs[0]?.mode ?? 'human'}
-                  onChange={(event) => {
-                    const mode = event.target.value as PlayerMode;
-                    updatePlayerConfig(0, { mode });
-                  }}
-                  className={styles.modeSelect}
-                >
-                  {MODE_GROUPS.map((group) => (
-                    <optgroup key={group.label} label={group.label}>
-                      {group.options.map((option) => (
-                        <option key={option.value} value={option.value} disabled={option.disabled}>
-                          {option.label}
-                          {option.disabled ? '（即将上线）' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                {renderExternalConfig(0)}
+                <div className={styles.modeBadge}>{MODE_LABEL[playerConfigs[0]?.mode ?? 'human']}</div>
               </div>
             </div>
 
@@ -878,27 +841,7 @@ export default function GobangRenderer() {
                   <span className={styles.confidence}>{formatConfidence(tsRatings[1])}</span>
                   <span className={styles.badge}>后手</span>
                 </div>
-                <select
-                  aria-label="Player 2 mode"
-                  value={playerConfigs[1]?.mode ?? 'builtin:random'}
-                  onChange={(event) => {
-                    const mode = event.target.value as PlayerMode;
-                    updatePlayerConfig(1, { mode });
-                  }}
-                  className={styles.modeSelect}
-                >
-                  {MODE_GROUPS.map((group) => (
-                    <optgroup key={group.label} label={group.label}>
-                      {group.options.map((option) => (
-                        <option key={option.value} value={option.value} disabled={option.disabled}>
-                          {option.label}
-                          {option.disabled ? '（即将上线）' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-                {renderExternalConfig(1)}
+                <div className={styles.modeBadge}>{MODE_LABEL[playerConfigs[1]?.mode ?? 'human']}</div>
               </div>
             </div>
           </div>
@@ -910,6 +853,32 @@ export default function GobangRenderer() {
           </div>
         </div>
       </section>
+
+      <div className={styles.configSection}>
+        <PlayerConfigPanel
+          title="参赛选手配置"
+          description="为每位选手选择人类、内置算法或外置 AI，并填写对应的 API/模型。"
+          players={PLAYERS.map((player, index) => ({
+            title: (
+              <span>
+                {player.name} <span style={{ opacity: 0.7 }}>({index === 0 ? '黑子' : '白子'})</span>
+              </span>
+            ),
+            badge: index === 0 ? '先手' : '后手',
+          }))}
+          configs={playerConfigs}
+          optionGroups={MODE_GROUPS}
+          getMode={(config) => config?.mode}
+          onModeChange={(index, mode) => updatePlayerConfig(index as 0 | 1, { mode: mode as PlayerMode })}
+          renderMeta={(index) => (
+            <>
+              <div>TrueSkill：{formatTrueSkillStat(tsRatings[index])}</div>
+              <div>CR：{formatConfidence(tsRatings[index])}</div>
+            </>
+          )}
+          renderFields={(index) => renderExternalConfig(index as 0 | 1)}
+        />
+      </div>
 
       <div className={styles.main}>
         <div className={styles.boardColumn}>
@@ -1115,61 +1084,28 @@ export default function GobangRenderer() {
       </div>
 
       <section className={styles.metricsRow}>
-        <div className={styles.metricsCard}>
-          <div className={styles.metricsHeader}>
-            <h3>TrueSkill 存档</h3>
-            <p>按当前身份读取/更新 TrueSkill，并可导入导出存档。</p>
-          </div>
-          <div className={styles.metricsActions}>
-            <button type="button" onClick={applyStoredRatings} className={styles.tsButton}>
-              应用存档
-            </button>
-            <button type="button" onClick={handleTsExport} className={styles.tsButton}>
-              导出
-            </button>
-            <label className={styles.uploadLabel}>
-              导入
-              <input
-                ref={tsFileRef}
-                type="file"
-                accept="application/json"
-                onChange={handleTsUpload}
-                className={styles.uploadInput}
-              />
-            </label>
-          </div>
-        </div>
-        <div className={styles.metricsCard}>
-          <div className={styles.metricsHeader}>
-            <h3>思考耗时</h3>
-            <p>记录每位选手的平均思考时间与最近一次耗时。</p>
-          </div>
-          <table className={styles.latencyTable}>
-            <thead>
-              <tr>
-                <th>身份</th>
-                <th>平均 (ms)</th>
-                <th>次数</th>
-                <th>最近 (ms)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[0, 1].map((index) => {
-                const identity = buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index);
-                const stats = latencyStore.players?.[identity.id];
-                const last = lastLatency[index];
-                return (
-                  <tr key={identity.id}>
-                    <td>{identity.label}</td>
-                    <td>{stats ? stats.mean.toFixed(1) : '—'}</td>
-                    <td>{stats ? stats.count : '—'}</td>
-                    <td>{last != null ? last.toFixed(1) : '—'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <TrueSkillArchivePanel
+          storeKey={TS_STORE_KEY}
+          schema={TS_SCHEMA}
+          exportName="gobang_trueskill"
+          players={playerIdentities.map((identity, index) => ({
+            id: identity.id,
+            label: `${PLAYERS[index].name}（${index === 0 ? '黑方' : '白方'}）`,
+            role: identity.role,
+          }))}
+          onApply={handleApplyTsStore}
+          onStoreChange={handleTsStoreChange}
+        />
+        <LatencySummaryPanel
+          store={latencyStore}
+          lastMs={lastLatency}
+          identities={playerIdentities.map((identity) => identity.id)}
+          defaultCatalog={playerIdentities.map((identity) => identity.id)}
+          labelForIdentity={(id) => playerIdentities.find((item) => item.id === id)?.label || id}
+          lang="zh"
+          title="思考耗时"
+          subtitle="展示累计均值与最近一次外置/内置 AI 耗时"
+        />
       </section>
     </div>
   );
