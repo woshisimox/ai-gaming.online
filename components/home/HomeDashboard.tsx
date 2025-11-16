@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { GameDefinition, GameId } from '../../games';
 import DonationWidget from '../DonationWidget';
 import DdzLadderCard from './DdzLadderCard';
+import SiteInfoButtons from './SiteInfoButtons';
 import {
   readTrueSkillStore,
   resolveStoredRating,
@@ -265,7 +266,10 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
               统一的平台入口展示所有游戏的天梯、思考耗时与参赛局数，也提供微信打赏与免责声明等信息。
             </p>
           </div>
-          <DonationWidget lang="zh" className={styles.refreshButton} />
+          <div className={styles.heroActions}>
+            <DonationWidget lang="zh" className={styles.donationButton} />
+            <SiteInfoButtons lang="zh" />
+          </div>
         </div>
         <ul className={styles.heroList}>
           {heroItems.map((item) => (

@@ -26,6 +26,23 @@
   }
 }
 
+.heroActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+@media (max-width: 767px) {
+  .heroActions {
+    align-items: flex-start;
+  }
+}
+
+.donationButton {
+  align-self: flex-end;
+}
+
 .heroTitle {
   font-size: 28px;
   font-weight: 600;
