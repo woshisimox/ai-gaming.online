@@ -3,18 +3,27 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { readDdzLadderPlayers, type DdzLadderPlayer } from '../../lib/game-modules/ddzLadder';
+import { readLatencyStore, type LatencyStore } from '../../lib/game-modules/latencyStore';
 import styles from './DdzLadderCard.module.css';
+
+const LATENCY_KEY = 'ddz_latency_store_v1';
+const LATENCY_SCHEMA = 'ddz-latency@3';
 
 export default function DdzLadderCard({ refreshToken }: { refreshToken: number }) {
   const [players, setPlayers] = useState<DdzLadderPlayer[]>(() => readDdzLadderPlayers());
+  const [latencyStore, setLatencyStore] = useState<LatencyStore>(() => readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA));
 
   useEffect(() => {
     setPlayers(readDdzLadderPlayers());
+    setLatencyStore(readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA));
   }, [refreshToken]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return () => undefined;
-    const handler = () => setPlayers(readDdzLadderPlayers());
+    const handler = () => {
+      setPlayers(readDdzLadderPlayers());
+      setLatencyStore(readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA));
+    };
     window.addEventListener('ddz-all-refresh', handler as any);
     const timer = window.setInterval(handler, 2500);
     return () => {
@@ -35,6 +44,21 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
     const playsMax = matchesSorted.reduce((max, player) => Math.max(max, player.matches || 0), 0);
     return { byScore: sorted, byMatches: matchesSorted, maxAbsScore: maxAbs || 1, maxMatches: playsMax || 1 };
   }, [players]);
+
+  const latencyRows = useMemo(() => {
+    const entries = Object.entries(latencyStore.players || {});
+    const rows = entries
+      .map(([id, stats]) => ({
+        id,
+        label: stats.label || id,
+        mean: Number(stats.mean) || 0,
+        count: Number(stats.count) || 0,
+      }))
+      .filter((row) => row.count > 0)
+      .sort((a, b) => a.mean - b.mean);
+    const maxMean = rows.reduce((max, row) => Math.max(max, row.mean), 0) || 1;
+    return { rows, maxMean };
+  }, [latencyStore]);
 
   if (!players.length) {
     return <div className={styles.empty}>暂无积分数据，开始一场斗地主对局后会自动记录。</div>;
@@ -87,6 +111,32 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
             );
           })}
         </div>
+      </div>
+
+      <div className={styles.segment}>
+        <h4 className={styles.segmentTitle}>思考耗时统计</h4>
+        <p className={styles.segmentDesc}>按平均耗时从快到慢排列，灰色文本表示样本量。</p>
+        {latencyRows.rows.length ? (
+          <div className={`${styles.grid} ${styles.gridLatency}`}>
+            {latencyRows.rows.map((entry) => {
+              const pct = Math.min(1, entry.mean / (latencyRows.maxMean || 1));
+              return (
+                <div key={`latency-${entry.id}`} className={styles.row}>
+                  <div className={styles.label}>{entry.label}</div>
+                  <div className={styles.latencyTrack}>
+                    <div className={styles.latencyFill} style={{ width: `${pct * 100}%` }} />
+                  </div>
+                  <div className={`${styles.value} ${styles.latencyValue}`}>
+                    <span>{entry.mean.toFixed(1)} ms</span>
+                    <span className={styles.latencySamples}>样本 {new Intl.NumberFormat('zh-CN').format(entry.count)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className={styles.segmentEmpty}>暂无耗时样本，完成一局后即可自动生成统计。</p>
+        )}
       </div>
     </div>
   );

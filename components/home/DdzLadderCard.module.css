@@ -60,6 +60,10 @@
   grid-template-columns: 200px 1fr 120px;
 }
 
+.gridLatency {
+  grid-template-columns: 200px 1fr 160px;
+}
+
 @media (min-width: 768px) {
   .gridScores {
     grid-template-columns: 220px 1fr 72px;
@@ -67,6 +71,10 @@
 
   .gridMatches {
     grid-template-columns: 220px 1fr 120px;
+  }
+
+  .gridLatency {
+    grid-template-columns: 220px 1fr 180px;
   }
 }
 
@@ -90,6 +98,14 @@
   border-radius: 999px;
   border: 1px solid #e2e8f0;
   background: #f8fafc;
+}
+
+.latencyTrack {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #ecfeff;
 }
 
 .zeroAxis {
@@ -134,6 +150,37 @@
   border-radius: 999px;
   background: linear-gradient(90deg, #bfdbfe, #60a5fa 50%, #1d4ed8);
   box-shadow: 0 1px 2px rgba(37, 99, 235, 0.25);
+}
+
+.latencyFill {
+  position: absolute;
+  inset: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #bae6fd, #38bdf8 55%, #0284c7);
+  box-shadow: 0 1px 2px rgba(14, 165, 233, 0.25);
+}
+
+.latencyValue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+}
+
+.latencySamples {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.segmentEmpty {
+  margin: 8px 0 0;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px dashed #cbd5f5;
+  background: #f8fafc;
+  font-size: 13px;
+  color: #64748b;
 }
 
 .empty {
