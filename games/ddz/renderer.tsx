@@ -1707,6 +1707,17 @@ function thoughtLabelForIdentity(id: string): string {
   return label;
 }
 
+const LADDER_NAME_FONT = "'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Heiti SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Segoe UI', sans-serif";
+const LADDER_LABEL_STYLE: CSSProperties = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontSize: 14,
+  fontWeight: 600,
+  color: '#0f172a',
+  fontFamily: LADDER_NAME_FONT,
+};
+
 /* ===== 天梯图组件（x=ΔR_event，y=各 AI/内置；含未参赛=历史或0） ===== */
 function LadderPanel() {
   const { t, lang } = useI18n();
@@ -1783,7 +1794,7 @@ function LadderPanel() {
           const pos = it.val >= 0;
           return (
             <div key={it.id} style={{ display:'contents' }}>
-              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
+              <div style={LADDER_LABEL_STYLE}>{it.label}</div>
               <div style={{ position:'relative', height:16, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8 }}>
                 <div style={axisStyle} />
                 <div
@@ -1816,7 +1827,7 @@ function LadderPanel() {
           })();
           return (
             <div key={`plays-${it.id}`} style={{ display:'contents' }}>
-              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
+              <div style={LADDER_LABEL_STYLE}>{it.label}</div>
               <div style={{ position:'relative', height:16, background:'#eef2ff', border:'1px solid #cbd5f5', borderRadius:8 }}>
                 <div
                   style={{
