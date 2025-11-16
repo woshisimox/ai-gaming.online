@@ -167,19 +167,26 @@ function formatTimestamp(value?: string): string {
   }
 }
 
-function GobangTrueSkillCard({ ladder }: { ladder: LadderEntry[] }) {
+type TrueSkillTableProps = {
+  ladder: LadderEntry[];
+  title?: string;
+  description?: string;
+  emptyHint?: string;
+};
+
+function TrueSkillTable({ ladder, title = 'TrueSkill 天梯', description, emptyHint }: TrueSkillTableProps) {
   if (!ladder.length) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-sm text-slate-500">
-        暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。
+        {emptyHint || '暂无 TrueSkill 数据，完成一局对局后即可自动生成天梯。'}
       </div>
     );
   }
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/90 shadow-sm">
       <div className="border-b border-slate-100 bg-slate-50/80 px-4 py-3">
-        <p className="text-sm font-semibold text-slate-900">TrueSkill 天梯</p>
-        <p className="text-xs text-slate-500">按 CR 排序（μ - 3σ），实时展示双方总评级。</p>
+        <p className="text-sm font-semibold text-slate-900">{title}</p>
+        {description ? <p className="text-xs text-slate-500">{description}</p> : null}
       </div>
       <div className="max-h-80 overflow-auto">
         <table className="min-w-full divide-y divide-slate-100 text-sm">
@@ -260,6 +267,17 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
     [],
   );
 
+  const lastUpdatedLabel = useMemo(() => {
+    const timestamps: string[] = [];
+    Object.values(snapshots).forEach((snapshot) => {
+      if (snapshot?.ladderUpdatedAt) timestamps.push(snapshot.ladderUpdatedAt);
+      if (snapshot?.latencyUpdatedAt) timestamps.push(snapshot.latencyUpdatedAt);
+    });
+    if (!timestamps.length) return '—';
+    const latestIso = timestamps.sort().at(-1);
+    return formatTimestamp(latestIso);
+  }, [snapshots]);
+
   return (
     <div className="space-y-8">
       <section className="rounded-3xl bg-white/90 p-6 shadow-sm ring-1 ring-slate-100">
@@ -294,6 +312,7 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             <p className="text-xs font-semibold uppercase tracking-widest text-indigo-500">实时统计</p>
             <h2 className="mt-1 text-2xl font-semibold text-slate-900">积分 / 天梯 / 耗时</h2>
             <p className="text-sm text-slate-600">斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。</p>
+            <p className="mt-2 text-xs text-slate-500">最新刷新：{lastUpdatedLabel}</p>
           </div>
           <button
             type="button"
@@ -351,6 +370,14 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             <div className="mt-6">
               <DdzLadderCard refreshToken={refreshToken} />
             </div>
+
+            <div className="mt-6">
+              <TrueSkillTable
+                ladder={snapshots.ddz?.ladder ?? []}
+                description="按 CR 排序（μ - 3σ），同步展示当前斗地主 TrueSkill 天梯。"
+                emptyHint="暂无 TrueSkill 数据，完成一局斗地主后即可生成天梯。"
+              />
+            </div>
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-6 shadow-inner">
@@ -397,7 +424,11 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             </dl>
 
             <div className="mt-6">
-              <GobangTrueSkillCard ladder={snapshots.gobang?.ladder ?? []} />
+              <TrueSkillTable
+                ladder={snapshots.gobang?.ladder ?? []}
+                description="按 CR 排序（μ - 3σ），实时展示黑白双方的 TrueSkill 评级。"
+                emptyHint="暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。"
+              />
             </div>
           </div>
         </div>
