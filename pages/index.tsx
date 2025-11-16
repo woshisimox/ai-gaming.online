@@ -22,7 +22,7 @@ export default function HomePage() {
   const Renderer = current?.renderer as RendererComponent | undefined;
 
   const tabs: Array<{ id: TabId; label: string; subtitle?: string }> = [
-    { id: 'home', label: '首页', subtitle: '打赏 / 免责声明 / 总览' },
+    { id: 'home', label: '首页' },
     ...games.map((game) => ({ id: game.id as GameId, label: game.displayName })),
   ];
 
