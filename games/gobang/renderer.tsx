@@ -1080,33 +1080,35 @@ export default function GobangRenderer() {
               </ol>
             )}
           </div>
+
+          <div className={styles.metricsStack}>
+            <TrueSkillArchivePanel
+              storeKey={TS_STORE_KEY}
+              schema={TS_SCHEMA}
+              exportName="gobang_trueskill"
+              players={playerIdentities.map((identity, index) => ({
+                id: identity.id,
+                label: `${PLAYERS[index].name}（${index === 0 ? '黑方' : '白方'}）`,
+                role: identity.role,
+              }))}
+              onApply={handleApplyTsStore}
+              onStoreChange={handleTsStoreChange}
+            />
+            <LatencySummaryPanel
+              store={latencyStore}
+              lastMs={lastLatency}
+              identities={playerIdentities.map((identity) => identity.id)}
+              defaultCatalog={playerIdentities.map((identity) => identity.id)}
+              labelForIdentity={(id) =>
+                playerIdentities.find((item) => item.id === id)?.label || id
+              }
+              lang="zh"
+              title="思考耗时"
+              subtitle="展示累计均值与最近一次外置/内置 AI 耗时"
+            />
+          </div>
         </aside>
       </div>
-
-      <section className={styles.metricsRow}>
-        <TrueSkillArchivePanel
-          storeKey={TS_STORE_KEY}
-          schema={TS_SCHEMA}
-          exportName="gobang_trueskill"
-          players={playerIdentities.map((identity, index) => ({
-            id: identity.id,
-            label: `${PLAYERS[index].name}（${index === 0 ? '黑方' : '白方'}）`,
-            role: identity.role,
-          }))}
-          onApply={handleApplyTsStore}
-          onStoreChange={handleTsStoreChange}
-        />
-        <LatencySummaryPanel
-          store={latencyStore}
-          lastMs={lastLatency}
-          identities={playerIdentities.map((identity) => identity.id)}
-          defaultCatalog={playerIdentities.map((identity) => identity.id)}
-          labelForIdentity={(id) => playerIdentities.find((item) => item.id === id)?.label || id}
-          lang="zh"
-          title="思考耗时"
-          subtitle="展示累计均值与最近一次外置/内置 AI 耗时"
-        />
-      </section>
     </div>
   );
 }
