@@ -48,8 +48,8 @@
 
 .tabButtonActive::after {
   opacity: 1;
-  background: linear-gradient(120deg, #0f172a, #2563eb);
-  box-shadow: 0 10px 25px rgba(37, 99, 235, 0.35);
+  background: linear-gradient(120deg, #050a1a, #1d4ed8 70%, #60a5fa);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
 }
 
 .tabButtonInactive {
