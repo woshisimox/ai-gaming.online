@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import styles from './DdzLadderCard.module.css';
+
 type LadderPlayer = {
   id: string;
   label: string;
@@ -79,62 +81,53 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
   }, [players]);
 
   if (!players.length) {
-    return (
-      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-sm text-slate-500">
-        暂无积分数据，开始一场斗地主对局后会自动记录。
-      </div>
-    );
+    return <div className={styles.empty}>暂无积分数据，开始一场斗地主对局后会自动记录。</div>;
   }
 
   return (
-    <div className="space-y-6 rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm">
-      <div>
-        <h4 className="text-lg font-semibold text-slate-900">积分</h4>
-        <p className="text-sm text-slate-500">实时 ΔR 变化，灰色竖线表示 0 分。</p>
+    <div className={styles.card}>
+      <div className={styles.header}>
+        <h4 className={styles.headerTitle}>积分</h4>
+        <p className={styles.headerText}>实时 ΔR 变化，灰色竖线表示 0 分。</p>
       </div>
-      <div className="grid gap-3 md:grid-cols-[240px_1fr_72px]">
+      <div className={`${styles.grid} ${styles.gridScores}`}>
         {byScore.map((player) => {
           const pct = Math.min(1, Math.abs(player.deltaR) / (maxAbsScore || 1));
           const isPositive = player.deltaR >= 0;
+          const widthPct = pct * 50;
           return (
-            <div key={player.id} className="contents">
-              <div className="truncate text-sm font-medium text-slate-800">{player.label}</div>
-              <div className="relative h-3.5 overflow-hidden rounded-full border border-slate-200 bg-slate-50">
-                <div className="absolute inset-y-0 left-1/2 w-px bg-slate-200" />
+            <div key={player.id} className={styles.row}>
+              <div className={styles.label}>{player.label}</div>
+              <div className={styles.track}>
+                <div className={styles.zeroAxis} />
                 <div
-                  className={`absolute inset-y-0 ${isPositive ? 'left-1/2' : ''} rounded-full ${
-                    isPositive ? 'bg-emerald-500' : 'bg-rose-500'
-                  }`}
+                  className={styles.deltaBar}
                   style={{
-                    width: `${pct * 50}%`,
-                    left: isPositive ? '50%' : `${50 - pct * 50}%`,
+                    background: isPositive ? '#10b981' : '#f43f5e',
+                    left: isPositive ? '50%' : `${50 - widthPct}%`,
+                    right: isPositive ? `${50 - widthPct}%` : '50%',
                   }}
                 />
               </div>
-              <div className="text-right font-mono text-sm text-slate-900">{player.deltaR.toFixed(2)}</div>
+              <div className={styles.value}>{player.deltaR.toFixed(2)}</div>
             </div>
           );
         })}
       </div>
 
-      <div className="border-t border-dashed border-slate-200 pt-4">
-        <h4 className="text-lg font-semibold text-slate-900">累计局数</h4>
-        <p className="text-sm text-slate-500">按参赛次数排序，蓝色柱条越长代表局数越多。</p>
-        <div className="mt-4 grid gap-3 md:grid-cols-[240px_1fr_120px]">
+      <div className={styles.segment}>
+        <h4 className={styles.segmentTitle}>累计局数</h4>
+        <p className={styles.segmentDesc}>按参赛次数排序，蓝色柱条越长代表局数越多。</p>
+        <div className={`${styles.grid} ${styles.gridMatches}`}>
           {byMatches.map((player) => {
             const pct = Math.min(1, (player.matches || 0) / (maxMatches || 1));
             return (
-              <div key={`matches-${player.id}`} className="contents">
-                <div className="truncate text-sm font-medium text-slate-800">{player.label}</div>
-                <div className="relative h-3.5 overflow-hidden rounded-full border border-slate-200 bg-slate-50">
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-indigo-500"
-                    style={{ width: `${pct * 100}%` }}
-                  />
+              <div key={`matches-${player.id}`} className={styles.row}>
+                <div className={styles.label}>{player.label}</div>
+                <div className={styles.matchTrack}>
+                  <div className={styles.matchFill} style={{ width: `${pct * 100}%` }} />
                 </div>
-                <div className="text-right font-mono text-sm text-slate-900">
-                  {new Intl.NumberFormat('zh-CN').format(Math.round(player.matches))} 局
-                </div>
+                <div className={styles.value}>{new Intl.NumberFormat('zh-CN').format(Math.round(player.matches))} 局</div>
               </div>
             );
           })}
