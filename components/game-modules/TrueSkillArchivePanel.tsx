@@ -1,14 +1,12 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   readTrueSkillStore,
   writeTrueSkillStore,
   importTrueSkillArchive,
   formatTrueSkillArchiveName,
-  resolveStoredRating,
   type TrueSkillStore,
-  type Rating,
 } from '../../lib/game-modules/trueSkill';
 import styles from './TrueSkillArchivePanel.module.css';
 
@@ -43,7 +41,6 @@ export function TrueSkillArchivePanel({
   storeKey,
   schema,
   exportName = 'trueskill_archive',
-  players,
   onApply,
   onStoreChange,
   actionLabels,
@@ -90,15 +87,6 @@ export function TrueSkillArchivePanel({
     }
   }, [schema, setAndPersistStore]);
 
-  const playerRows = useMemo(() => {
-    if (!players || !players.length) return [] as Array<{ label: string; rating: Rating | null; role?: string }>;
-    return players.map((identity) => {
-      const entry = store.players[identity.id];
-      const rating = resolveStoredRating(entry, identity.role || undefined);
-      return { label: identity.label, rating, role: identity.role };
-    });
-  }, [players, store]);
-
   return (
     <section className={`${styles.root} ${className || ''}`}>
       <div className={styles.header}>
@@ -123,32 +111,6 @@ export function TrueSkillArchivePanel({
           />
         </label>
       </div>
-      {playerRows.length ? (
-        <div className={styles.tableWrapper}>
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th align="left">选手</th>
-                <th align="right">μ</th>
-                <th align="right">σ</th>
-                <th align="right">CR</th>
-              </tr>
-            </thead>
-            <tbody>
-              {playerRows.map((row, index) => (
-                <tr key={`${row.label}-${index}`}>
-                  <td>{row.label}</td>
-                  <td align="right">{row.rating ? row.rating.mu.toFixed(2) : '—'}</td>
-                  <td align="right">{row.rating ? row.rating.sigma.toFixed(2) : '—'}</td>
-                  <td align="right">{row.rating ? (row.rating.mu - 3 * row.rating.sigma).toFixed(2) : '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className={styles.emptyRow}>暂无选手数据</div>
-      )}
     </section>
   );
 }

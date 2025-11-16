@@ -55,38 +55,3 @@
   cursor: pointer;
 }
 
-.tableWrapper {
-  border-radius: 12px;
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(248, 250, 252, 0.08);
-  overflow: hidden;
-}
-
-.table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.table thead {
-  background: rgba(248, 250, 252, 0.08);
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-}
-
-.table th,
-.table td {
-  padding: 8px;
-  border-bottom: 1px solid rgba(248, 250, 252, 0.08);
-}
-
-.table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.emptyRow {
-  text-align: center;
-  padding: 12px;
-  color: rgba(248, 250, 252, 0.6);
-}
