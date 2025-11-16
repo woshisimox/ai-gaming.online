@@ -25,6 +25,13 @@ import { readPlayerConfigs, writePlayerConfigs } from '../../lib/game-modules/pl
 import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
 import { TrueSkillArchivePanel } from '../../components/game-modules/TrueSkillArchivePanel';
 import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
+import {
+  ensureMatchSummaryStore,
+  incrementMatchSummary,
+  readMatchSummaryStore,
+  writeMatchSummaryStore,
+  type MatchSummaryStore,
+} from '../../lib/game-modules/matchStatsStore';
 
 const BOARD_SIZE = gobangEngine.initialState().data.board.length;
 
@@ -141,6 +148,8 @@ const TS_STORE_KEY = 'gobang_ts_store_v1';
 const TS_SCHEMA = 'gobang-trueskill@1';
 const LATENCY_KEY = 'gobang_latency_store_v1';
 const LATENCY_SCHEMA = 'gobang-latency@1';
+const MATCH_STATS_KEY = 'gobang_match_stats_v1';
+const MATCH_STATS_SCHEMA = 'gobang-match-stats@1';
 
 function sanitizePlayerConfig(raw?: PlayerConfig): PlayerConfig {
   if (!raw || typeof raw !== 'object') return { mode: 'human' };
@@ -353,6 +362,9 @@ export default function GobangRenderer() {
   );
   const latencyStoreRef = useRef(latencyStore);
   useEffect(() => { latencyStoreRef.current = latencyStore; }, [latencyStore]);
+  const matchStatsRef = useRef<MatchSummaryStore>(
+    readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA),
+  );
   const [lastLatency, setLastLatency] = useState<Array<number | null>>([null, null]);
   const lastRecordedTurnRef = useRef<number | null>(null);
   const playerIdentities = useMemo(
@@ -402,11 +414,22 @@ export default function GobangRenderer() {
     tsStoreRef.current = store;
   }, []);
 
+  const recordMatchOutcome = useCallback((winner: 0 | 1 | null | undefined) => {
+    const store = ensureMatchSummaryStore(matchStatsRef.current, MATCH_STATS_SCHEMA);
+    const winnerKey = typeof winner === 'number' ? (winner === 0 ? 'black' : 'white') : null;
+    const updated = incrementMatchSummary(store, winnerKey);
+    matchStatsRef.current = writeMatchSummaryStore(MATCH_STATS_KEY, updated);
+  }, []);
+
   useEffect(() => {
-    if (state.status !== 'finished' || state.data.winner == null) return;
+    if (state.status !== 'finished') return;
     if (lastRecordedTurnRef.current === state.turn) return;
     lastRecordedTurnRef.current = state.turn;
-    const winner = state.data.winner as 0 | 1;
+    const winner = state.data.winner as 0 | 1 | null;
+    recordMatchOutcome(winner);
+    if (winner == null) {
+      return;
+    }
     const loser = (winner === 0 ? 1 : 0) as 0 | 1;
     const updated = tsRatings.map((rating) => ({ ...rating }));
     tsUpdateTwoTeams(updated, [winner], [loser]);
@@ -422,7 +445,7 @@ export default function GobangRenderer() {
       store.players[identity.id] = entry;
     });
     tsStoreRef.current = writeTrueSkillStore(TS_STORE_KEY, store);
-  }, [ensureTsStore, playerConfigs, state.data.winner, state.status, state.turn, tsRatings]);
+  }, [ensureTsStore, playerConfigs, recordMatchOutcome, state.data.winner, state.status, state.turn, tsRatings]);
 
   const applyAction = useCallback((action: GobangAction, origin: MoveOrigin, note?: string) => {
     setState((previous) => {
