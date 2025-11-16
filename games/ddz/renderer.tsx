@@ -3,6 +3,36 @@ import { createContext, forwardRef, useCallback, useContext, useEffect, useImper
 import DonationWidget from '../../components/DonationWidget';
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { PageSeoMeta } from '../../lib/seoConfig';
+import {
+  Rating,
+  TS_DEFAULT,
+  TS_BETA,
+  tsUpdateTwoTeams,
+  ensureRating,
+  createTrueSkillStore,
+  readTrueSkillStore,
+  writeTrueSkillStore,
+  importTrueSkillArchive,
+  formatTrueSkillArchiveName,
+  normalCdf,
+  type TrueSkillStore,
+  type TrueSkillStoreEntry,
+} from '../../lib/game-modules/trueSkill';
+import {
+  LatencyStore,
+  LatencyPlayerStats,
+  ensureLatencyPlayer,
+  ensureLatencyStore,
+  readLatencyStore,
+  writeLatencyStore,
+  updateLatencyStats,
+} from '../../lib/game-modules/latencyStore';
+import {
+  readPlayerConfigs,
+  writePlayerConfigs,
+  readConfigState,
+  writeConfigState,
+} from '../../lib/game-modules/playerConfigStore';
 /* ======= Minimal i18n (zh/en) injection: BEGIN ======= */
 type Lang = 'zh' | 'en';
 const LangContext = createContext<Lang>('zh');
@@ -972,36 +1002,6 @@ type BotChoice =
   | 'http'
   | 'human';
 
-/* ========= TrueSkill（前端轻量实现，1v2：地主 vs 两农民） ========= */
-type Rating = { mu:number; sigma:number };
-const TS_DEFAULT: Rating = { mu:25, sigma:25/3 };
-const TS_BETA = 25/6;
-const TS_TAU  = 25/300;
-const SQRT2 = Math.sqrt(2);
-function erf(x:number){ const s=Math.sign(x); const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911; const t=1/(1+p*Math.abs(x)); const y=1-(((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t)*Math.exp(-x*x); return s*y; }
-function phi(x:number){ return Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI); }
-function Phi(x:number){ return 0.5*(1+erf(x/SQRT2)); }
-function V_exceeds(t:number){ const d=Math.max(1e-12,Phi(t)); return phi(t)/d; }
-function W_exceeds(t:number){ const v=V_exceeds(t); return v*(v+t); }
-function tsUpdateTwoTeams(r:Rating[], teamA:number[], teamB:number[]){
-  const varA = teamA.reduce((s,i)=>s+r[i].sigma**2,0), varB = teamB.reduce((s,i)=>s+r[i].sigma**2,0);
-  const muA  = teamA.reduce((s,i)=>s+r[i].mu,0),     muB  = teamB.reduce((s,i)=>s+r[i].mu,0);
-  const c2   = varA + varB + 2*TS_BETA*TS_BETA;
-  const c    = Math.sqrt(c2);
-  const t    = (muA - muB) / c;
-  const v = V_exceeds(t), w = W_exceeds(t);
-  for (const i of teamA) {
-    const sig2=r[i].sigma**2, mult=sig2/c, mult2=sig2/c2;
-    r[i].mu += mult*v;
-    r[i].sigma = Math.sqrt(Math.max(1e-6, sig2*(1 - w*mult2)) + TS_TAU*TS_TAU);
-  }
-  for (const i of teamB) {
-    const sig2=r[i].sigma**2, mult=sig2/c, mult2=sig2/c2;
-    r[i].mu -= mult*v;
-    r[i].sigma = Math.sqrt(Math.max(1e-6, sig2*(1 - w*mult2)) + TS_TAU*TS_TAU);
-  }
-}
-
 const KO_BYE = '__KO_BYE__';
 type KnockoutPlayer = string | null;
 type KnockoutMatch = { id: string; players: KnockoutPlayer[]; eliminated: KnockoutPlayer | null; };
@@ -1417,36 +1417,14 @@ function findNextPlayableMatch(rounds: KnockoutRound[]): { roundIdx: number; mat
 
 /* ===== TrueSkill 本地存档（新增） ===== */
 type TsRole = 'landlord'|'farmer';
-type TsStoreEntry = {
-  id: string;                 // 身份（详见 seatIdentity）
-  label?: string;
-  overall?: Rating | null;    // 总体
-  roles?: {                   // 角色分档
-    landlord?: Rating | null;
-    farmer?: Rating | null;
-  };
-  meta?: { choice?: string; model?: string; httpBase?: string };
-};
-type TsStore = {
-  schema: 'ddz-trueskill@1';
-  updatedAt: string;
-  players: Record<string, TsStoreEntry>;
-};
+type TsStoreEntry = TrueSkillStoreEntry;
+type TsStore = TrueSkillStore;
+const TS_STORE_SCHEMA = 'ddz-trueskill@1';
 const TS_STORE_KEY = 'ddz_ts_store_v1';
 
-const ensureRating = (x:any): Rating => {
-  const mu = Number(x?.mu), sigma = Number(x?.sigma);
-  if (Number.isFinite(mu) && Number.isFinite(sigma)) return { mu, sigma };
-  return { ...TS_DEFAULT };
-};
-const emptyStore = (): TsStore => ({ schema:'ddz-trueskill@1', updatedAt:new Date().toISOString(), players:{} });
-const readStore = (): TsStore => {
-  try { const raw = localStorage.getItem(TS_STORE_KEY); if (!raw) return emptyStore();
-    const j = JSON.parse(raw); if (j?.schema && j?.players) return j as TsStore;
-  } catch {}
-  return emptyStore();
-};
-const writeStore = (s: TsStore) => { try { s.updatedAt=new Date().toISOString(); localStorage.setItem(TS_STORE_KEY, JSON.stringify(s)); } catch {} };
+const emptyStore = (): TsStore => createTrueSkillStore(TS_STORE_SCHEMA);
+const readStore = (): TsStore => readTrueSkillStore(TS_STORE_KEY, TS_STORE_SCHEMA);
+const writeStore = (s: TsStore) => writeTrueSkillStore(TS_STORE_KEY, s);
 
 /* ====== 其它 UI/逻辑 ====== */
 type LiveProps = {
@@ -2323,57 +2301,16 @@ function LogLine({ text }: { text:string }) {
 }
 
 /* ===== 思考耗时（thoughtMs）累计均值存档 ===== */
-type ThoughtPlayerStats = { mean:number; count:number; label?:string };
-type ThoughtStore = { schema:'ddz-latency@3'; updatedAt:string; players:Record<string, ThoughtPlayerStats> };
+type ThoughtPlayerStats = LatencyPlayerStats;
+type ThoughtStore = LatencyStore;
+const THOUGHT_SCHEMA = 'ddz-latency@3';
 const THOUGHT_KEY = 'ddz_latency_store_v1';
-const THOUGHT_EMPTY: ThoughtStore = { schema:'ddz-latency@3', updatedAt:new Date().toISOString(), players:{} };
+const THOUGHT_EMPTY: ThoughtStore = ensureLatencyStore({ schema: THOUGHT_SCHEMA, players: {} }, THOUGHT_SCHEMA);
 
-const ensurePlayerStats = (raw:any): ThoughtPlayerStats => {
-  const meanRaw = Number(raw?.mean);
-  const countRaw = Number(raw?.count);
-  const labelRaw = typeof raw?.label === 'string' ? raw.label : undefined;
-  const label = labelRaw ? labelRaw.slice(0, 160) : undefined;
-  return {
-    mean: Number.isFinite(meanRaw) ? meanRaw : 0,
-    count: Number.isFinite(countRaw) && countRaw >= 0 ? countRaw : 0,
-    ...(label ? { label } : {}),
-  };
-};
-
-function ensureThoughtStore(raw: any): ThoughtStore {
-  const updatedAt = typeof raw?.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString();
-  if (raw?.schema === 'ddz-latency@3' && raw?.players && typeof raw.players === 'object') {
-    const players: Record<string, ThoughtPlayerStats> = {};
-    for (const key of Object.keys(raw.players)) {
-      players[key] = ensurePlayerStats(raw.players[key]);
-    }
-    return { schema:'ddz-latency@3', updatedAt, players };
-  }
-  // 旧版（按座位）数据无法映射至具体身份，避免误导直接清空
-  return { schema:'ddz-latency@3', updatedAt, players:{} };
-}
-
-function readThoughtStore(): ThoughtStore {
-  if (typeof window === 'undefined') {
-    return { ...THOUGHT_EMPTY, updatedAt: new Date().toISOString(), players:{} };
-  }
-  try {
-    const raw = localStorage.getItem(THOUGHT_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return ensureThoughtStore(parsed);
-    }
-  } catch {}
-  return { ...THOUGHT_EMPTY, updatedAt: new Date().toISOString(), players:{} };
-}
-
-function writeThoughtStore(store: ThoughtStore): ThoughtStore {
-  const base: ThoughtStore = ensureThoughtStore(store);
-  if (typeof window === 'undefined') return { ...base, updatedAt: new Date().toISOString() };
-  const next = { ...base, updatedAt: new Date().toISOString() };
-  try { localStorage.setItem(THOUGHT_KEY, JSON.stringify(next)); } catch {}
-  return next;
-}
+const ensurePlayerStats = (raw:any): ThoughtPlayerStats => ensureLatencyPlayer(raw);
+const ensureThoughtStore = (raw:any): ThoughtStore => ensureLatencyStore(raw, THOUGHT_SCHEMA);
+const readThoughtStore = (): ThoughtStore => readLatencyStore(THOUGHT_KEY, THOUGHT_SCHEMA);
+const writeThoughtStore = (store: ThoughtStore): ThoughtStore => writeLatencyStore(THOUGHT_KEY, store);
 
 const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
   'built-in:greedy-max','built-in:greedy-min','built-in:random-legal','built-in:mininet','built-in:ally-support','built-in:endgame-rush','built-in:advanced-hybrid',
@@ -2605,25 +2542,17 @@ function KnockoutPanel() {
   const { lang } = useI18n();
   const humanOptionLabel = lang === 'en' ? 'Human' : '人类选手';
   const humanProviderLabel = lang === 'en' ? 'Human player' : '人类选手';
-  const [settings, setSettings] = useState<KnockoutSettings>(() => {
-    if (typeof window === 'undefined') return defaultKnockoutSettings();
-    try {
-      const stored = localStorage.getItem(KO_SETTINGS_STORAGE);
-      if (stored) {
-        return sanitizeKnockoutSettings(JSON.parse(stored));
-      }
-    } catch {}
-    return defaultKnockoutSettings();
-  });
+  const [settings, setSettings] = useState<KnockoutSettings>(() =>
+    readConfigState(KO_SETTINGS_STORAGE, defaultKnockoutSettings, sanitizeKnockoutSettings),
+  );
   const [entries, setEntries] = useState<KnockoutEntry[]>(() => {
     if (typeof window === 'undefined') return makeDefaultKnockoutEntries();
+    const stored = readPlayerConfigs<any>(KO_ENTRY_STORAGE, () => []);
+    if (stored.length) {
+      const normalized = normalizeKnockoutEntries(stored);
+      if (normalized?.length) return normalized;
+    }
     try {
-      const stored = localStorage.getItem(KO_ENTRY_STORAGE);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const normalized = normalizeKnockoutEntries(parsed);
-        if (normalized?.length) return normalized;
-      }
       const legacySeed = localStorage.getItem('ddz_knockout_seed');
       if (legacySeed) {
         const names = legacySeed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -2698,8 +2627,7 @@ function KnockoutPanel() {
   useEffect(() => { matchLogRef.current = matchLog; }, [matchLog]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { localStorage.setItem(KO_SETTINGS_STORAGE, JSON.stringify(settings)); } catch {}
+    writeConfigState(KO_SETTINGS_STORAGE, settings);
   }, [settings]);
 
   useEffect(() => {
@@ -2717,11 +2645,7 @@ function KnockoutPanel() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const payload = entries.map(persistableKnockoutEntry);
-      localStorage.setItem(KO_ENTRY_STORAGE, JSON.stringify(payload));
-    } catch {}
+    writePlayerConfigs(KO_ENTRY_STORAGE, entries, persistableKnockoutEntry);
   }, [entries]);
 
   useEffect(() => {
@@ -5338,18 +5262,12 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const baseStore = thoughtStoreRef.current ? ensureThoughtStore(thoughtStoreRef.current) : THOUGHT_EMPTY;
     const prevPlayers = { ...(baseStore.players || {}) };
     const sanitizedPrev = ensurePlayerStats(prevPlayers[identity]);
-    const prevCount = Math.max(0, Number(sanitizedPrev.count) || 0);
-    const prevMean = Number(sanitizedPrev.mean) || 0;
-    const nextCount = prevCount + 1;
-    const nextMean = (prevMean * prevCount + ms) / nextCount;
-    const displayLabel = sanitizedPrev.label && sanitizedPrev.label.trim() ? sanitizedPrev.label.trim() : thoughtLabelForIdentity(identity);
-    prevPlayers[identity] = {
-      mean: nextMean,
-      count: nextCount,
-      ...(displayLabel ? { label: displayLabel } : {}),
-    };
+    const fallbackLabel = thoughtLabelForIdentity(identity);
+    const displayLabel = sanitizedPrev.label && sanitizedPrev.label.trim() ? sanitizedPrev.label.trim() : fallbackLabel;
+    prevPlayers[identity] = updateLatencyStats(prevPlayers[identity], ms, displayLabel);
+    const latestStats = prevPlayers[identity];
     const nextStore: ThoughtStore = {
-      schema: 'ddz-latency@3',
+      schema: THOUGHT_SCHEMA,
       updatedAt: new Date().toISOString(),
       players: prevPlayers,
     };
@@ -5364,9 +5282,9 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const fmt = (v:number) => (v >= 1000 ? v.toFixed(0) : v.toFixed(1));
     const seatDisplay = seatLabel(seat, lang);
     const stats = persisted.players?.[identity];
-    const avgLabel = stats ? fmt(Number(stats.mean) || 0) : fmt(nextMean);
-    const countValue = stats ? Number(stats.count) || nextCount : nextCount;
-    const identityLabel = displayLabel || thoughtLabelForIdentity(identity);
+    const avgLabel = stats ? fmt(Number(stats.mean) || 0) : fmt(latestStats.mean);
+    const countValue = stats ? Number(stats.count) || latestStats.count : latestStats.count;
+    const identityLabel = displayLabel || fallbackLabel;
     const logLine = lang === 'en'
       ? `【Latency】${identityLabel}｜${seatDisplay}｜thought=${fmt(ms)}ms｜avg=${avgLabel}ms｜n=${countValue}`
       : `【Latency】${identityLabel}｜${seatDisplay}｜思考=${fmt(ms)}ms｜均值=${avgLabel}ms｜次数=${countValue}`;
@@ -5444,29 +5362,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const f = e.target.files?.[0]; if (!f) return;
     try {
       const text = await f.text();
-      const j = JSON.parse(text);
-      const store: TsStore = emptyStore();
-
-      // 兼容多种模板：数组 / {players:{}} / 单人
-      if (Array.isArray(j?.players)) {
-        for (const p of j.players) {
-          const id = p.id || p.identity || p.key; if (!id) continue;
-          store.players[id] = {
-            id,
-            overall: p.overall || p.rating || null,
-            roles: { landlord: p.roles?.landlord ?? p.landlord ?? p.L ?? null,
-                     farmer:   p.roles?.farmer   ?? p.farmer   ?? p.F ?? null },
-            meta: p.meta || {}
-          };
-        }
-      } else if (j?.players && typeof j.players === 'object') {
-        store.players = j.players;
-      } else if (Array.isArray(j)) {
-        for (const p of j) { const id = p.id || p.identity; if (!id) continue; store.players[id] = p; }
-      } else {
-        if (j?.id) store.players[j.id] = j;
-      }
-
+      const store = importTrueSkillArchive(text, TS_STORE_SCHEMA);
       tsStoreRef.current = store; writeStore(store);
       setLog(l => [...l, `【TS】已上传存档（共 ${Object.keys(store.players).length} 名玩家）`]);
     } catch (err:any) {
@@ -5475,10 +5371,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   };
 
   const makeArchiveName = (suffix: string) => {
-    const d = new Date();
-    const pad = (n:number) => String(n).padStart(2, '0');
-    const tag = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    return `ddz_all_stats_${tag}${suffix}`;
+    const base = formatTrueSkillArchiveName('ddz_all_stats');
+    return base.replace(/\.json$/, `${suffix}`);
   };
 
   const handleSaveArchive = () => {
@@ -6980,7 +6874,7 @@ if (m.type === 'event' && m.kind === 'play') {
                     const vA  = teamA.reduce((ss,i)=> ss + pre[i].sigma*pre[i].sigma + TS_BETA*TS_BETA, 0);
                     const vB  = teamB.reduce((ss,i)=> ss + pre[i].sigma*pre[i].sigma + TS_BETA*TS_BETA, 0);
                     const c = Math.sqrt(vA + vB);
-                    return Phi( (muA - muB) / c );
+                    return normalCdf((muA - muB) / c);
                   };
                   const mag = Math.max(Math.abs(ds[0]||0), Math.abs(ds[1]||0), Math.abs(ds[2]||0));
                   const base = 20, cap = 3, gamma = 1;

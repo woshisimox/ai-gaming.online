@@ -1,9 +1,30 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import type { GobangAction, GobangState } from './game';
 import { gobangEngine } from './game';
 import styles from './renderer.module.css';
+import {
+  Rating,
+  TS_DEFAULT,
+  applyRatingsFromStore,
+  createTrueSkillStore,
+  readTrueSkillStore,
+  writeTrueSkillStore,
+  tsUpdateTwoTeams,
+  importTrueSkillArchive,
+  formatTrueSkillArchiveName,
+  type TrueSkillStore,
+} from '../../lib/game-modules/trueSkill';
+import {
+  LatencyStore,
+  ensureLatencyStore,
+  readLatencyStore,
+  writeLatencyStore,
+  updateLatencyStats,
+} from '../../lib/game-modules/latencyStore';
+import { readPlayerConfigs, writePlayerConfigs } from '../../lib/game-modules/playerConfigStore';
 
 const BOARD_SIZE = gobangEngine.initialState().data.board.length;
 
@@ -115,6 +136,42 @@ const MODE_GROUPS: Array<{
   },
 ];
 
+const PLAYER_STORAGE_KEY = 'gobang_player_configs_v1';
+const TS_STORE_KEY = 'gobang_ts_store_v1';
+const TS_SCHEMA = 'gobang-trueskill@1';
+const LATENCY_KEY = 'gobang_latency_store_v1';
+const LATENCY_SCHEMA = 'gobang-latency@1';
+
+function sanitizePlayerConfig(raw?: PlayerConfig): PlayerConfig {
+  if (!raw || typeof raw !== 'object') return { mode: 'human' };
+  const safeMode = (raw.mode && MODE_LABEL[raw.mode]) ? raw.mode : 'human';
+  const next: PlayerConfig = { mode: safeMode };
+  if (raw.model) next.model = raw.model;
+  if (raw.apiKey) next.apiKey = raw.apiKey;
+  if (raw.baseUrl) next.baseUrl = raw.baseUrl;
+  if (raw.token) next.token = raw.token;
+  return next;
+}
+
+function buildPlayerIdentity(config: PlayerConfig, index: number): { id: string; label: string } {
+  const mode = config.mode ?? 'human';
+  if (mode.startsWith('ai:')) {
+    const model = (config.model ?? '').trim();
+    const base = (config.baseUrl ?? '').trim();
+    const label = `${MODE_LABEL[mode] ?? mode}${model ? `:${model}` : ''}`;
+    return { id: `${mode}|${model}|${base}`, label };
+  }
+  if (mode === 'http') {
+    const base = (config.baseUrl ?? '').trim();
+    const label = `${MODE_LABEL[mode] ?? mode}${base ? `:${base}` : ''}`;
+    return { id: `${mode}|${base}`, label };
+  }
+  if (mode.startsWith('builtin')) {
+    return { id: mode, label: MODE_LABEL[mode] ?? mode };
+  }
+  return { id: `human:${index}`, label: index === 0 ? '黑方（人类）' : '白方（人类）' };
+}
+
 type MoveOrigin = 'human' | 'ai' | 'resign';
 
 interface MoveLogEntry {
@@ -147,6 +204,17 @@ function formatCoordinate(row: number, col: number): string {
 function formatDelta(delta: number): string {
   if (delta === 0) return '±0';
   return delta > 0 ? `+${delta}` : `${delta}`;
+}
+
+function formatTrueSkillStat(rating?: Rating) {
+  if (!rating) return 'μ — · σ —';
+  return `μ ${rating.mu.toFixed(2)} · σ ${rating.sigma.toFixed(2)}`;
+}
+
+function formatConfidence(rating?: Rating) {
+  if (!rating) return 'CR —';
+  const cr = rating.mu - 3 * rating.sigma;
+  return `CR ${cr.toFixed(2)}`;
 }
 
 function inBounds(row: number, col: number): boolean {
@@ -243,15 +311,51 @@ function getMatchStatus(state: GobangState): string {
 }
 
 export default function GobangRenderer() {
+  const initialPlayerConfigsRef = useRef<PlayerConfig[] | null>(null);
+  if (!initialPlayerConfigsRef.current) {
+    const stored = readPlayerConfigs<PlayerConfig>(
+      PLAYER_STORAGE_KEY,
+      () => [
+        { mode: 'human' },
+        { mode: 'builtin:random' },
+      ],
+      sanitizePlayerConfig,
+    );
+    initialPlayerConfigsRef.current = stored.length
+      ? stored
+      : [
+          { mode: 'human' },
+          { mode: 'builtin:random' },
+        ];
+  }
   const [state, setState] = useState<GobangState>(createPendingInitialState);
   const [moveLog, setMoveLog] = useState<MoveLogEntry[]>([]);
-  const [playerConfigs, setPlayerConfigs] = useState<PlayerConfig[]>([
-    { mode: 'human' },
-    { mode: 'builtin:random' },
-  ]);
+  const [playerConfigs, setPlayerConfigs] = useState<PlayerConfig[]>(
+    () => initialPlayerConfigsRef.current ?? [
+        { mode: 'human' },
+        { mode: 'builtin:random' },
+      ],
+  );
   const [aiStatus, setAiStatus] = useState<string | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const aiTicketRef = useRef(0);
+  const tsStoreRef = useRef<TrueSkillStore>(readTrueSkillStore(TS_STORE_KEY, TS_SCHEMA));
+  const [tsRatings, setTsRatings] = useState<Rating[]>(() => {
+    const baseConfigs = initialPlayerConfigsRef.current ?? [
+      { mode: 'human' },
+      { mode: 'builtin:random' },
+    ];
+    const identities = baseConfigs.map((config, index) => ({ id: buildPlayerIdentity(config, index).id }));
+    return applyRatingsFromStore(tsStoreRef.current ?? createTrueSkillStore(TS_SCHEMA), identities);
+  });
+  const tsFileRef = useRef<HTMLInputElement | null>(null);
+  const [latencyStore, setLatencyStore] = useState<LatencyStore>(() =>
+    readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA),
+  );
+  const latencyStoreRef = useRef(latencyStore);
+  useEffect(() => { latencyStoreRef.current = latencyStore; }, [latencyStore]);
+  const [lastLatency, setLastLatency] = useState<Array<number | null>>([null, null]);
+  const lastRecordedTurnRef = useRef<number | null>(null);
 
   const legalMoves = useMemo(() => {
     if (state.status !== 'running') {
@@ -262,6 +366,51 @@ export default function GobangRenderer() {
   const matchStatus = getMatchStatus(state);
   const { board, lastMove } = state.data;
   const hasStarted = state.status !== 'pending';
+
+  useEffect(() => {
+    writePlayerConfigs(PLAYER_STORAGE_KEY, playerConfigs, sanitizePlayerConfig);
+  }, [playerConfigs]);
+
+  const ensureTsStore = useCallback(() => {
+    if (!tsStoreRef.current) {
+      tsStoreRef.current = createTrueSkillStore(TS_SCHEMA);
+    }
+    return tsStoreRef.current;
+  }, []);
+
+  const applyStoredRatings = useCallback(() => {
+    const identities = [0, 1].map((index) => ({
+      id: buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index).id,
+    }));
+    const store = ensureTsStore();
+    setTsRatings(applyRatingsFromStore(store, identities));
+  }, [ensureTsStore, playerConfigs]);
+
+  useEffect(() => {
+    applyStoredRatings();
+  }, [applyStoredRatings]);
+
+  useEffect(() => {
+    if (state.status !== 'finished' || state.data.winner == null) return;
+    if (lastRecordedTurnRef.current === state.turn) return;
+    lastRecordedTurnRef.current = state.turn;
+    const winner = state.data.winner as 0 | 1;
+    const loser = (winner === 0 ? 1 : 0) as 0 | 1;
+    const updated = tsRatings.map((rating) => ({ ...rating }));
+    tsUpdateTwoTeams(updated, [winner], [loser]);
+    setTsRatings(updated);
+    const store = ensureTsStore();
+    const identities = [0, 1].map((index) => buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index));
+    identities.forEach((identity, index) => {
+      const role = index === 0 ? 'black' : 'white';
+      const entry = store.players[identity.id] || { id: identity.id, roles: {} };
+      entry.overall = { ...updated[index] };
+      entry.roles = { ...(entry.roles || {}), [role]: { ...updated[index] } };
+      entry.label = identity.label;
+      store.players[identity.id] = entry;
+    });
+    tsStoreRef.current = writeTrueSkillStore(TS_STORE_KEY, store);
+  }, [ensureTsStore, playerConfigs, state.data.winner, state.status, state.turn, tsRatings]);
 
   const applyAction = useCallback((action: GobangAction, origin: MoveOrigin, note?: string) => {
     setState((previous) => {
@@ -308,6 +457,8 @@ export default function GobangRenderer() {
     setMoveLog([]);
     setAiStatus(null);
     setAiError(null);
+    lastRecordedTurnRef.current = null;
+    setLastLatency([null, null]);
   }, []);
 
   const handleReset = useCallback(() => {
@@ -315,6 +466,8 @@ export default function GobangRenderer() {
     setMoveLog([]);
     setAiStatus(null);
     setAiError(null);
+    lastRecordedTurnRef.current = null;
+    setLastLatency([null, null]);
   }, []);
 
   const handleResign = useCallback(() => {
@@ -346,11 +499,68 @@ export default function GobangRenderer() {
     setAiStatus(null);
   }, [state]);
 
+  const recordLatency = useCallback(
+    (playerIndex: 0 | 1, durationMs: number) => {
+      if (!Number.isFinite(durationMs) || durationMs < 0) return;
+      const identity = buildPlayerIdentity(playerConfigs[playerIndex] ?? { mode: 'human' }, playerIndex);
+      const baseStore = ensureLatencyStore(
+        latencyStoreRef.current || { schema: LATENCY_SCHEMA, players: {} },
+        LATENCY_SCHEMA,
+      );
+      const nextPlayers = { ...(baseStore.players || {}) };
+      nextPlayers[identity.id] = updateLatencyStats(nextPlayers[identity.id], durationMs, identity.label);
+      const nextStore: LatencyStore = {
+        schema: LATENCY_SCHEMA,
+        updatedAt: new Date().toISOString(),
+        players: nextPlayers,
+      };
+      const persisted = writeLatencyStore(LATENCY_KEY, nextStore);
+      latencyStoreRef.current = persisted;
+      setLatencyStore(persisted);
+      setLastLatency((prev) => {
+        const arr = Array.isArray(prev) ? [...prev] : [null, null];
+        arr[playerIndex] = durationMs;
+        return arr;
+      });
+    },
+    [playerConfigs],
+  );
+
+  const handleTsExport = useCallback(() => {
+    const store = ensureTsStore();
+    const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = formatTrueSkillArchiveName('gobang_trueskill');
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, [ensureTsStore]);
+
+  const handleTsUpload = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const store = importTrueSkillArchive(text, TS_SCHEMA);
+        tsStoreRef.current = store;
+        writeTrueSkillStore(TS_STORE_KEY, store);
+        applyStoredRatings();
+      } catch (error: any) {
+        setAiError(error?.message || 'TrueSkill 存档导入失败');
+      } finally {
+        event.target.value = '';
+      }
+    },
+    [applyStoredRatings],
+  );
+
   const updatePlayerConfig = useCallback((index: 0 | 1, update: Partial<PlayerConfig>) => {
     setPlayerConfigs((previous) => {
       const next = [...previous] as PlayerConfig[];
-      const current = next[index] ?? { mode: 'human' };
-      next[index] = { ...current, ...update };
+      const current = sanitizePlayerConfig(next[index]);
+      next[index] = sanitizePlayerConfig({ ...current, ...update });
       return next;
     });
   }, []);
@@ -430,12 +640,15 @@ export default function GobangRenderer() {
       const modeLabel = MODE_LABEL[mode] ?? 'AI';
       setAiStatus(`${PLAYERS[currentPlayer].name}（${modeLabel}）正在思考…`);
       setAiError(null);
+      const startMark = typeof performance !== 'undefined' ? performance.now() : Date.now();
 
       try {
         if (mode === 'builtin:random') {
           const result = pickBuiltinMove(state, legal);
           if (aiTicketRef.current !== ticket) return;
           setAiStatus(null);
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+          recordLatency(currentPlayer, elapsed);
           applyAction(result.action, 'ai', result.note);
           return;
         }
@@ -446,6 +659,8 @@ export default function GobangRenderer() {
           setAiStatus(null);
           setAiError(`${PLAYERS[currentPlayer].name} (${modeLabel}) 未配置 API Key，已使用内置随机 AI。`);
           const combinedNote = ['未配置 API Key，改用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+          recordLatency(currentPlayer, elapsed);
           applyAction(fallback.action, 'ai', combinedNote || undefined);
           return;
         }
@@ -454,6 +669,8 @@ export default function GobangRenderer() {
         const result = await requestExternalMove(mode, config, observation, legal, currentPlayer);
         if (aiTicketRef.current !== ticket) return;
         setAiStatus(null);
+        const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+        recordLatency(currentPlayer, elapsed);
         applyAction(result.action, 'ai', result.note);
       } catch (error) {
         if (aiTicketRef.current !== ticket) return;
@@ -463,6 +680,8 @@ export default function GobangRenderer() {
         const message = error instanceof Error ? error.message : String(error);
         setAiError(message || '外置 AI 调用失败，已回退到内置随机 AI。');
         const combinedNote = ['外置 AI 调用失败，已使用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+        const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+        recordLatency(currentPlayer, elapsed);
         applyAction(fallback.action, 'ai', combinedNote || undefined);
       }
     };
@@ -474,7 +693,7 @@ export default function GobangRenderer() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [applyAction, playerConfigs, requestExternalMove, requiresApiKey, state]);
+  }, [applyAction, playerConfigs, recordLatency, requestExternalMove, requiresApiKey, state]);
 
   const renderExternalConfig = useCallback(
     (index: 0 | 1) => {
@@ -619,8 +838,8 @@ export default function GobangRenderer() {
                   <span>{PLAYERS[0].flag}</span>
                 </div>
                 <div className={styles.playerStats}>
-                  <span>TrueSkill {PLAYERS[0].rating}</span>
-                  <span style={{ color: PLAYERS[0].delta >= 0 ? '#34d399' : '#fb7185' }}>{formatDelta(PLAYERS[0].delta)}</span>
+                  <span>{formatTrueSkillStat(tsRatings[0])}</span>
+                  <span className={styles.confidence}>{formatConfidence(tsRatings[0])}</span>
                   <span className={styles.badge}>先手</span>
                 </div>
                 <select
@@ -655,8 +874,8 @@ export default function GobangRenderer() {
                   <span>{PLAYERS[1].flag}</span>
                 </div>
                 <div className={styles.playerStats}>
-                  <span>TrueSkill {PLAYERS[1].rating}</span>
-                  <span style={{ color: PLAYERS[1].delta >= 0 ? '#34d399' : '#fb7185' }}>{formatDelta(PLAYERS[1].delta)}</span>
+                  <span>{formatTrueSkillStat(tsRatings[1])}</span>
+                  <span className={styles.confidence}>{formatConfidence(tsRatings[1])}</span>
                   <span className={styles.badge}>后手</span>
                 </div>
                 <select
@@ -894,6 +1113,64 @@ export default function GobangRenderer() {
           </div>
         </aside>
       </div>
+
+      <section className={styles.metricsRow}>
+        <div className={styles.metricsCard}>
+          <div className={styles.metricsHeader}>
+            <h3>TrueSkill 存档</h3>
+            <p>按当前身份读取/更新 TrueSkill，并可导入导出存档。</p>
+          </div>
+          <div className={styles.metricsActions}>
+            <button type="button" onClick={applyStoredRatings} className={styles.tsButton}>
+              应用存档
+            </button>
+            <button type="button" onClick={handleTsExport} className={styles.tsButton}>
+              导出
+            </button>
+            <label className={styles.uploadLabel}>
+              导入
+              <input
+                ref={tsFileRef}
+                type="file"
+                accept="application/json"
+                onChange={handleTsUpload}
+                className={styles.uploadInput}
+              />
+            </label>
+          </div>
+        </div>
+        <div className={styles.metricsCard}>
+          <div className={styles.metricsHeader}>
+            <h3>思考耗时</h3>
+            <p>记录每位选手的平均思考时间与最近一次耗时。</p>
+          </div>
+          <table className={styles.latencyTable}>
+            <thead>
+              <tr>
+                <th>身份</th>
+                <th>平均 (ms)</th>
+                <th>次数</th>
+                <th>最近 (ms)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[0, 1].map((index) => {
+                const identity = buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index);
+                const stats = latencyStore.players?.[identity.id];
+                const last = lastLatency[index];
+                return (
+                  <tr key={identity.id}>
+                    <td>{identity.label}</td>
+                    <td>{stats ? stats.mean.toFixed(1) : '—'}</td>
+                    <td>{stats ? stats.count : '—'}</td>
+                    <td>{last != null ? last.toFixed(1) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
     </div>
   );
 }
