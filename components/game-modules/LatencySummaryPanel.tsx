@@ -2,6 +2,7 @@
 
 import type { ReactNode } from 'react';
 import type { LatencyStore } from '../../lib/game-modules/latencyStore';
+import styles from './LatencySummaryPanel.module.css';
 
 export interface LatencySummaryPanelProps {
   store: LatencyStore | null;
@@ -82,61 +83,46 @@ export function LatencySummaryPanel({
   };
 
   return (
-    <div style={{ border: '1px dashed #cbd5f5', borderRadius: 12, padding: 16, background: '#f8fafc' }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>{resolvedTitle}</div>
-      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>{resolvedSubtitle}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr 80px 140px', gap: 8, rowGap: 10 }}>
-        {items.map((item) => {
-          const pct = item.count > 0 ? Math.min(1, item.mean / scale || 0) : 0;
-          const lastEntry = item.lastEntry;
-          const seatTag = lastEntry ? `${lastEntry.seat}` : '';
-          return (
-            <div key={item.id} style={{ display: 'contents' }}>
-              <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {item.label}
-              </div>
-              <div
-                style={{
-                  position: 'relative',
-                  height: 18,
-                  background: 'linear-gradient(90deg, #f0f9ff, #e0f2fe)',
-                  borderRadius: 9999,
-                  overflow: 'hidden',
-                  border: '1px solid #cbd5f5',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: `${pct * 100}%`,
-                    background: 'linear-gradient(90deg, #bae6fd, #38bdf8 55%, #0284c7)',
-                    transition: 'width 0.3s ease',
-                    borderRadius: 9999,
-                    boxShadow: '0 1px 2px rgba(14, 165, 233, 0.25)',
-                  }}
-                />
-              </div>
-              <div style={{ fontFamily: 'ui-monospace,Menlo,Consolas,monospace', textAlign: 'right' }}>
-                {item.count > 0 ? `${fmt(item.mean)} ms` : '—'}
-              </div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                <div>
-                  {countLabel}
-                  {item.count}
-                </div>
-                <div>
-                  {lastLabel}
-                  {colon}
-                  {lastEntry?.ms != null ? `${fmt(lastEntry.ms)} ms` : '—'}
-                  {wrapSeatTag(seatTag)}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        {!items.length && <div>暂无记录</div>}
+    <div className={styles.panel}>
+      <div className={styles.header}>
+        <div className={styles.title}>{resolvedTitle}</div>
+        <div className={styles.subtitle}>{resolvedSubtitle}</div>
       </div>
+      {items.length ? (
+        <div className={styles.grid}>
+          {items.map((item) => {
+            const pct = item.count > 0 ? Math.min(1, item.mean / scale || 0) : 0;
+            const lastEntry = item.lastEntry;
+            const seatTag = lastEntry ? `${lastEntry.seat}` : '';
+            return (
+              <div key={item.id} className={styles.row}>
+                <div className={styles.label}>{item.label}</div>
+                <div className={styles.track}>
+                  <div className={styles.fill} style={{ width: `${pct * 100}%` }} />
+                </div>
+                <div className={styles.valueStack}>
+                  <span className={styles.valuePrimary}>{item.count > 0 ? `${fmt(item.mean)} ms` : '—'}</span>
+                  <span className={styles.valueMeta}>
+                    {countLabel}
+                    {item.count}
+                    {lastEntry && (
+                      <>
+                        {' · '}
+                        {lastLabel}
+                        {colon}
+                        {lastEntry.ms != null ? `${fmt(lastEntry.ms)} ms` : '—'}
+                        {wrapSeatTag(seatTag)}
+                      </>
+                    )}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className={styles.empty}>{lang === 'en' ? 'No latency records yet.' : '暂无思考耗时记录。'}</p>
+      )}
     </div>
   );
 }
