@@ -266,6 +266,11 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
+.table th:nth-child(n + 2) {
+  text-align: right;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
 .table tbody tr:last-child td {
   border-bottom: none;
 }

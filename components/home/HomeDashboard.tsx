@@ -40,7 +40,13 @@ type GameStatsSnapshot = {
   latencyUpdatedAt?: string;
 };
 
-type MatchResolver = () => { total: number | null; detail?: string };
+type MatchResolverResult = {
+  total: number | null;
+  detail?: string;
+  labelMap?: Record<string, string>;
+};
+
+type MatchResolver = () => MatchResolverResult;
 
 type StatsConfig = {
   tsKey: string;
@@ -65,7 +71,11 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
       const detail = playerGameSum
         ? `全部选手共计 ${playerGameSum} 局参与记录 → 折算约 ${totalMatches} 场（三人一局）`
         : '等待第一局对战完成后自动生成统计';
-      return { total: totalMatches, detail };
+      const labelMap = players.reduce<Record<string, string>>((map, player) => {
+        map[player.id] = player.label;
+        return map;
+      }, {});
+      return { total: totalMatches, detail, labelMap };
     },
   },
   gobang: {
@@ -82,7 +92,7 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
   },
 };
 
-function buildLadder(store: TrueSkillStore): LadderEntry[] {
+function buildLadder(store: TrueSkillStore, labelMap?: Record<string, string>): LadderEntry[] {
   const entries = Object.values(store.players || {});
   return entries
     .map((entry) => {
@@ -90,7 +100,7 @@ function buildLadder(store: TrueSkillStore): LadderEntry[] {
       if (!rating) return null;
       const cr = rating.mu - 3 * rating.sigma;
       return {
-        label: entry.label || entry.id,
+        label: labelMap?.[entry.id] || entry.label || entry.id,
         cr,
         mu: rating.mu,
         sigma: rating.sigma,
@@ -206,7 +216,7 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
         const tsStore = readTrueSkillStore(config.tsKey, config.tsSchema);
         const latencyStore = readLatencyStore(config.latencyKey, config.latencySchema);
         const matches = config.resolveMatches();
-        const ladder = buildLadder(tsStore);
+        const ladder = buildLadder(tsStore, matches.labelMap);
         const latency = buildLatencySummary(latencyStore);
         next[game.id as GameId] = {
           id: game.id as GameId,
