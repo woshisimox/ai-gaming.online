@@ -42,6 +42,7 @@ import {
   writeMatchSummaryStore,
   type MatchSummaryStore,
 } from '../../lib/game-modules/matchStatsStore';
+import { computeDdzTotalMatches, readDdzLadderPlayers } from '../../lib/game-modules/ddzLadder';
 /* ======= Minimal i18n (zh/en) injection: BEGIN ======= */
 type Lang = 'zh' | 'en';
 const LangContext = createContext<Lang>('zh');
@@ -7291,8 +7292,9 @@ const [lang, setLang] = useState<Lang>(() => {
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
 
   const computeTotalMatches = useCallback(() => {
-    const store = readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA);
-    setTotalMatches(store.totals.matches ?? 0);
+    const players = readDdzLadderPlayers();
+    const { totalMatches: aggregate } = computeDdzTotalMatches(players);
+    setTotalMatches(aggregate);
   }, []);
 
   useEffect(() => {

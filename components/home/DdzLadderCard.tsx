@@ -2,63 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
+import { readDdzLadderPlayers, type DdzLadderPlayer } from '../../lib/game-modules/ddzLadder';
 import styles from './DdzLadderCard.module.css';
 
-type LadderPlayer = {
-  id: string;
-  label: string;
-  deltaR: number;
-  matches: number;
-};
-
-type LadderStore = {
-  schema?: string;
-  updatedAt?: string;
-  players?: Record<string, { label?: string; current?: { deltaR?: number; matches?: number; n?: number } }>;
-};
-
-function readLadderStore(): LadderPlayer[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  try {
-    const raw = window.localStorage.getItem('ddz_ladder_store_v1');
-    if (!raw) return [];
-    const parsed: LadderStore = JSON.parse(raw) || {};
-    const players = parsed.players || {};
-    return Object.keys(players).map((id) => {
-      const entry = players[id] || {};
-      const current = entry.current || {};
-      const matchesValue = (() => {
-        const direct = Number(current.matches);
-        if (Number.isFinite(direct)) return Math.max(0, direct);
-        const fallback = Number(current.n);
-        if (Number.isFinite(fallback)) return Math.max(0, Math.round(fallback));
-        return 0;
-      })();
-      return {
-        id,
-        label: entry.label || id,
-        deltaR: Number(current.deltaR) || 0,
-        matches: matchesValue,
-      };
-    });
-  } catch (error) {
-    console.warn('Failed to parse ddz ladder store', error);
-    return [];
-  }
-}
-
 export default function DdzLadderCard({ refreshToken }: { refreshToken: number }) {
-  const [players, setPlayers] = useState<LadderPlayer[]>(() => readLadderStore());
+  const [players, setPlayers] = useState<DdzLadderPlayer[]>(() => readDdzLadderPlayers());
 
   useEffect(() => {
-    setPlayers(readLadderStore());
+    setPlayers(readDdzLadderPlayers());
   }, [refreshToken]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return () => undefined;
-    const handler = () => setPlayers(readLadderStore());
+    const handler = () => setPlayers(readDdzLadderPlayers());
     window.addEventListener('ddz-all-refresh', handler as any);
     const timer = window.setInterval(handler, 2500);
     return () => {

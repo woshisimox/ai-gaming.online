@@ -13,6 +13,7 @@ import {
 } from '../../lib/game-modules/trueSkill';
 import { readLatencyStore, type LatencyStore } from '../../lib/game-modules/latencyStore';
 import { readMatchSummaryStore } from '../../lib/game-modules/matchStatsStore';
+import { computeDdzTotalMatches, readDdzLadderPlayers } from '../../lib/game-modules/ddzLadder';
 import styles from './HomeDashboard.module.css';
 
 type Props = {
@@ -49,8 +50,6 @@ type StatsConfig = {
   resolveMatches: MatchResolver;
 };
 
-const DDZ_MATCH_KEY = 'ddz_match_stats_v1';
-const DDZ_MATCH_SCHEMA = 'ddz-match-stats@1';
 const GOBANG_MATCH_KEY = 'gobang_match_stats_v1';
 const GOBANG_MATCH_SCHEMA = 'gobang-match-stats@1';
 
@@ -61,10 +60,12 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
     latencyKey: 'ddz_latency_store_v1',
     latencySchema: 'ddz-latency@3',
     resolveMatches: () => {
-      const store = readMatchSummaryStore(DDZ_MATCH_KEY, DDZ_MATCH_SCHEMA);
-      const wins = store.wins || {};
-      const detail = `地主 ${wins.landlord ?? 0}｜农民 ${wins.farmers ?? 0}｜平局 ${store.totals.draws ?? 0}`;
-      return { total: store.totals.matches ?? 0, detail };
+      const players = readDdzLadderPlayers();
+      const { totalMatches, playerGameSum } = computeDdzTotalMatches(players);
+      const detail = playerGameSum
+        ? `全部选手共计 ${playerGameSum} 局参与记录 → 折算约 ${totalMatches} 场（三人一局）`
+        : '等待第一局对战完成后自动生成统计';
+      return { total: totalMatches, detail };
     },
   },
   gobang: {
