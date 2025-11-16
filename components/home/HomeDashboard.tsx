@@ -48,7 +48,8 @@ type StatsConfig = {
   resolveMatches: MatchResolver;
 };
 
-const DDZ_MATCH_KEY = 'ddz_ladder_store_v1';
+const DDZ_MATCH_KEY = 'ddz_match_stats_v1';
+const DDZ_MATCH_SCHEMA = 'ddz-match-stats@1';
 const GOBANG_MATCH_KEY = 'gobang_match_stats_v1';
 const GOBANG_MATCH_SCHEMA = 'gobang-match-stats@1';
 
@@ -59,32 +60,10 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
     latencyKey: 'ddz_latency_store_v1',
     latencySchema: 'ddz-latency@3',
     resolveMatches: () => {
-      if (typeof window === 'undefined') {
-        return { total: 0 };
-      }
-      try {
-        const raw = window.localStorage.getItem(DDZ_MATCH_KEY);
-        if (!raw) return { total: 0 };
-        const store = JSON.parse(raw) || {};
-        const players = (store?.players && typeof store.players === 'object') ? (store.players as Record<string, any>) : {};
-        let total = 0;
-        for (const key of Object.keys(players)) {
-          const entry = players[key];
-          if (!entry) continue;
-          const matches = entry?.current?.matches;
-          if (typeof matches === 'number' && Number.isFinite(matches)) {
-            total += Math.max(0, Math.round(matches));
-            continue;
-          }
-          const fallback = entry?.current?.n;
-          if (typeof fallback === 'number' && Number.isFinite(fallback)) {
-            total += Math.max(0, Math.round(fallback));
-          }
-        }
-        return { total };
-      } catch {
-        return { total: 0 };
-      }
+      const store = readMatchSummaryStore(DDZ_MATCH_KEY, DDZ_MATCH_SCHEMA);
+      const wins = store.wins || {};
+      const detail = `地主 ${wins.landlord ?? 0}｜农民 ${wins.farmers ?? 0}｜平局 ${store.totals.draws ?? 0}`;
+      return { total: store.totals.matches ?? 0, detail };
     },
   },
   gobang: {

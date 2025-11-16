@@ -36,6 +36,13 @@ import {
   readConfigState,
   writeConfigState,
 } from '../../lib/game-modules/playerConfigStore';
+import {
+  ensureMatchSummaryStore,
+  incrementMatchSummary,
+  readMatchSummaryStore,
+  writeMatchSummaryStore,
+  type MatchSummaryStore,
+} from '../../lib/game-modules/matchStatsStore';
 /* ======= Minimal i18n (zh/en) injection: BEGIN ======= */
 type Lang = 'zh' | 'en';
 const LangContext = createContext<Lang>('zh');
@@ -1493,6 +1500,8 @@ const LOG_DELIVERY_ENDPOINT = ((process.env.NEXT_PUBLIC_LOG_DELIVERY_ENDPOINT ??
   || '/api/deliver_logs';
 const LOG_DELIVERY_MAX_ATTEMPTS = 3;
 const LOG_DELIVERY_RETRY_DELAY_MS = 2000;
+const MATCH_STATS_KEY = 'ddz_match_stats_v1';
+const MATCH_STATS_SCHEMA = 'ddz-match-stats@1';
 
 async function postRunLogDelivery(payload: RunLogDeliveryPayload, attempt = 1): Promise<void> {
   if (typeof window === 'undefined' || typeof fetch !== 'function') return;
@@ -4583,6 +4592,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const [thoughtStore, setThoughtStore] = useState<ThoughtStore>(() => readThoughtStore());
   const thoughtStoreRef = useRef<ThoughtStore>(thoughtStore);
   useEffect(() => { thoughtStoreRef.current = thoughtStore; }, [thoughtStore]);
+  const lastRecordedRoundKeyRef = useRef<string | null>(null);
   const [lastThoughtMs, setLastThoughtMs] = useState<(number | null)[]>([null, null, null]);
   const seatIdentity = useCallback((i:number) => {
     const choice = props.seats[i] as BotChoice;
@@ -5208,6 +5218,34 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     else setLog(l => [...l, logLine]);
   }, [lang, seatIdentity, setLog]);
 
+  const recordMatchSummary = useCallback(
+    (
+      winnerSeat: number | null | undefined,
+      landlordSeat: number | null | undefined,
+      roundKey: string | null,
+    ) => {
+      if (!roundKey) return;
+      if (lastRecordedRoundKeyRef.current === roundKey) return;
+      const store = ensureMatchSummaryStore(
+        readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA),
+        MATCH_STATS_SCHEMA,
+      );
+      let winnerKey: string | null = null;
+      if (typeof winnerSeat === 'number') {
+        if (typeof landlordSeat === 'number') {
+          winnerKey = winnerSeat === landlordSeat ? 'landlord' : 'farmers';
+        } else {
+          winnerKey = `seat-${winnerSeat}`;
+        }
+      }
+      const updated = incrementMatchSummary(store, winnerKey);
+      writeMatchSummaryStore(MATCH_STATS_KEY, updated);
+      lastRecordedRoundKeyRef.current = roundKey;
+      try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
+    },
+    [],
+  );
+
   const seatIdentitiesMemo = useMemo(() => [0,1,2].map(seatIdentity), [seatIdentity]);
   const tsArchivePlayers = useMemo(() => {
     return [0, 1, 2].flatMap((idx) => {
@@ -5581,6 +5619,10 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   
   const scoreFileRef = useRef<HTMLInputElement|null>(null);
 
+  useEffect(() => () => {
+    controllerRef.current?.abort();
+  }, []);
+
   const agentIdForIndex = (i:number) => {
     const choice = props.seats[i] as BotChoice;
     const label = choiceLabel(choice);
@@ -5779,6 +5821,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
       const toUiSeat = (j:number) => (j + startShift) % 3;
       const remap3 = <T,>(arr: T[]) => ([ arr[(0 - startShift + 3) % 3], arr[(1 - startShift + 3) % 3], arr[(2 - startShift + 3) % 3] ]) as T[];
       const traceId = Math.random().toString(36).slice(2,10) + '-' + Date.now().toString(36);
+      const roundKey = traceId;
       humanTraceRef.current = traceId;
       setLog(l => [...l, `【前端】开始第 ${labelRoundNo} 局 | 座位: ${seatSummaryText(baseSpecs)} | coop=${props.farmerCoop ? 'on' : 'off'} | trace=${traceId}`]);
 
@@ -6779,6 +6822,11 @@ if (m.type === 'event' && m.kind === 'play') {
                   }
                 }
                 nextWinner = nextWinnerLocal;
+                recordMatchSummary(
+                  typeof nextWinnerLocal === 'number' ? nextWinnerLocal : null,
+                  typeof nextLandlord === 'number' ? nextLandlord : null,
+                  roundKey,
+                );
 
                 // 标记一局结束 & 雷达图兜底
                 {
@@ -7083,6 +7131,7 @@ type AllBundle = {
   /* radar?: RadarStore;  // disabled */
   ladder?: { schema:'ddz-ladder@1'; updatedAt:string; players: Record<string, any> };
   latency?: ThoughtStore;
+  matchStats?: MatchSummaryStore;
 };
 
 const buildAllBundle = (): AllBundle => {
@@ -7093,6 +7142,7 @@ const buildAllBundle = (): AllBundle => {
     ladder = raw ? JSON.parse(raw) : null;
   } catch {}
   const latency = thoughtStoreRef.current ? ensureThoughtStore(thoughtStoreRef.current) : ensureThoughtStore(THOUGHT_EMPTY);
+  const matchStats = readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA);
   return {
     schema: 'ddz-all@1',
     createdAt: new Date().toISOString(),
@@ -7101,6 +7151,7 @@ const buildAllBundle = (): AllBundle => {
     /* radar excluded */
     ladder,
     latency,
+    matchStats,
   };
 };
 
@@ -7121,6 +7172,11 @@ const applyAllBundleInner = (obj:any) => {
       thoughtStoreRef.current = persisted;
       setThoughtStore(persisted);
       setLastThoughtMs([null, null, null]);
+    }
+    if (obj?.matchStats) {
+      const sanitizedStats = ensureMatchSummaryStore(obj.matchStats, MATCH_STATS_SCHEMA);
+      writeMatchSummaryStore(MATCH_STATS_KEY, sanitizedStats);
+      lastRecordedRoundKeyRef.current = null;
     }
     setLog(l => [...l, '【ALL】统一上传完成（TS / 画像 / 天梯 / 思考时延）。']);
   } catch (e:any) {
@@ -7973,33 +8029,8 @@ const [lang, setLang] = useState<Lang>(() => {
   const disclaimerHostRef = useRef<HTMLElement | null>(null);
 
   const computeTotalMatches = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.localStorage.getItem('ddz_ladder_store_v1');
-      if (!raw) {
-        setTotalMatches(0);
-        return;
-      }
-      const store = JSON.parse(raw) || {};
-      const players = (store?.players && typeof store.players === 'object') ? store.players as Record<string, any> : {};
-      let total = 0;
-      for (const key of Object.keys(players)) {
-        const entry = players[key];
-        if (!entry) continue;
-        const matches = entry?.current?.matches;
-        if (typeof matches === 'number' && Number.isFinite(matches)) {
-          total += Math.max(0, Math.round(matches));
-          continue;
-        }
-        const fallback = entry?.current?.n;
-        if (typeof fallback === 'number' && Number.isFinite(fallback)) {
-          total += Math.max(0, Math.round(fallback));
-        }
-      }
-      setTotalMatches(total);
-    } catch {
-      setTotalMatches(0);
-    }
+    const store = readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA);
+    setTotalMatches(store.totals.matches ?? 0);
   }, []);
 
   useEffect(() => {
@@ -8085,6 +8116,7 @@ const [lang, setLang] = useState<Lang>(() => {
     setLiveLog([]); setResetKey(k => k + 1);
     try { localStorage.removeItem('ddz_ladder_store_v1'); } catch {}
     try { localStorage.removeItem('ddz_latency_store_v1'); } catch {}
+    try { localStorage.removeItem(MATCH_STATS_KEY); } catch {}
     try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
   };
 
