@@ -35,6 +35,35 @@
   flex-wrap: wrap;
 }
 
+.langToggle {
+  display: inline-flex;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  background: #fff;
+}
+
+.langButton {
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.langButton:not(.langButtonActive):hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.langButtonActive {
+  background: #0f172a;
+  color: #fff;
+}
+
 @media (max-width: 767px) {
   .heroActions {
     justify-content: flex-start;

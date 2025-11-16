@@ -38,9 +38,7 @@ export default function HomePage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-semibold text-slate-900">ai-gaming.online</h1>
-              <p className="text-sm text-slate-600">多游戏 AI 对战平台，统一入口快速切换斗地主与五子棋。</p>
             </div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Modular Engines · TrueSkill · AI Latency</p>
           </div>
           <nav className="mt-6 flex flex-wrap gap-2">
             {tabs.map((tab) => {

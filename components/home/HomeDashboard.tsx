@@ -16,6 +16,144 @@ import { readMatchSummaryStore } from '../../lib/game-modules/matchStatsStore';
 import { computeDdzTotalMatches, readDdzLadderPlayers } from '../../lib/game-modules/ddzLadder';
 import styles from './HomeDashboard.module.css';
 
+type Lang = 'zh' | 'en';
+
+const LANG_OPTIONS: Array<{ id: Lang; label: string }> = [
+  { id: 'zh', label: '中文' },
+  { id: 'en', label: 'EN' },
+];
+
+const LOCALES: Record<Lang, string> = {
+  zh: 'zh-CN',
+  en: 'en-US',
+};
+
+type CopyBlock = {
+  heroTitle: string;
+  heroIntro: string;
+  heroItems: string[];
+  disclaimerTitle: string;
+  disclaimerBody: string;
+  statsTimestamp: string;
+  statsTitle: string;
+  statsSubtitle: string;
+  latestRefreshLabel: string;
+  refreshButton: string;
+  statLabels: {
+    totalMatches: string;
+    avgLatency: string;
+    players: string;
+    samples: string;
+    updated: string;
+  };
+  trueSkillTitle: string;
+  ddz: {
+    timestamp: string;
+    blockTitle: string;
+    blockSubtitle: string;
+    cta: string;
+    ladderDescription: string;
+    trueSkillDescription: string;
+    trueSkillEmpty: string;
+  };
+  gobang: {
+    timestamp: string;
+    blockTitle: string;
+    blockSubtitle: string;
+    cta: string;
+    trueSkillDescription: string;
+    trueSkillEmpty: string;
+  };
+};
+
+const COPY: Record<Lang, CopyBlock> = {
+  zh: {
+    heroTitle: '开放式 AI 博弈实验室',
+    heroIntro: '统一的平台入口展示所有游戏的天梯、思考耗时与参赛局数，也提供微信打赏与免责声明等信息。',
+    heroItems: [
+      '平台仅用于 AI 对抗研究与教学演示，不构成任何竞技或赌博活动。',
+      '实时数据包含天梯、TrueSkill、思考耗时及局数，请合理解读。',
+      '使用外置 AI 需遵守各模型服务条款，所有 API Key 仅存储在本地浏览器。',
+    ],
+    disclaimerTitle: '免责声明',
+    disclaimerBody:
+      '平台所有统计与排行榜均来源于用户本地浏览器，可能因缓存或离线原因与实际训练结果存在差异；任何数据仅供研究参考。',
+    statsTimestamp: '实时统计',
+    statsTitle: '积分 / 天梯 / 耗时',
+    statsSubtitle: '斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。',
+    latestRefreshLabel: '最新刷新',
+    refreshButton: '手动刷新',
+    statLabels: {
+      totalMatches: '累计局数',
+      avgLatency: '平均耗时',
+      players: '天梯选手',
+      samples: '样本',
+      updated: '更新',
+    },
+    trueSkillTitle: 'TrueSkill 天梯',
+    ddz: {
+      timestamp: '斗地主',
+      blockTitle: '积分榜 / 累计局数',
+      blockSubtitle: '与对局界面一致的积分排行、局数统计与耗时概览。',
+      cta: '进入斗地主',
+      ladderDescription: '与对局界面一致的积分排行、局数统计与耗时概览。',
+      trueSkillDescription: '按 CR 排序（μ - 3σ），同步展示当前斗地主 TrueSkill 天梯。',
+      trueSkillEmpty: '暂无 TrueSkill 数据，完成一局斗地主后即可生成天梯。',
+    },
+    gobang: {
+      timestamp: '五子棋',
+      blockTitle: 'TrueSkill / 对局统计',
+      blockSubtitle: '展示黑白双方累计胜负、TrueSkill 排名与平均耗时。',
+      cta: '进入五子棋',
+      trueSkillDescription: '按 CR 排序（μ - 3σ），实时展示黑白双方的 TrueSkill 评级。',
+      trueSkillEmpty: '暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。',
+    },
+  },
+  en: {
+    heroTitle: 'Open AI Gaming Lab',
+    heroIntro:
+      'The unified landing tab surfaces ladders, thinking latency, match totals, and donation / policy info for every integrated game.',
+    heroItems: [
+      'For AI-versus-AI research and teaching demos only—no gambling or competitive guarantees.',
+      'Live data covers ladders, TrueSkill, thinking latency, and match totals for every ruleset.',
+      'External AI integrations must follow each provider’s terms; all API keys stay inside your browser.',
+    ],
+    disclaimerTitle: 'Disclaimer',
+    disclaimerBody:
+      'All stats and leaderboards are stored locally in your browser and may differ from remote training results. Research use only.',
+    statsTimestamp: 'LIVE STATS',
+    statsTitle: 'Ratings · Ladder · Latency',
+    statsSubtitle: 'Modular metrics for Dou Dizhu and Gomoku are aggregated here.',
+    latestRefreshLabel: 'Last refresh',
+    refreshButton: 'Refresh now',
+    statLabels: {
+      totalMatches: 'Total matches',
+      avgLatency: 'Avg latency',
+      players: 'Ladder entrants',
+      samples: 'Samples',
+      updated: 'Updated',
+    },
+    trueSkillTitle: 'TrueSkill Ladder',
+    ddz: {
+      timestamp: 'Dou Dizhu',
+      blockTitle: 'Ratings & Totals',
+      blockSubtitle: 'Same leaderboard, totals, and latency summary used inside the match view.',
+      cta: 'Open Dou Dizhu',
+      ladderDescription: 'Live ΔR, match totals, and latency data from the Dou Dizhu renderer.',
+      trueSkillDescription: 'CR (μ - 3σ) ordering of the Dou Dizhu TrueSkill ladder.',
+      trueSkillEmpty: 'Play a Dou Dizhu round to generate the ladder.',
+    },
+    gobang: {
+      timestamp: 'Gomoku',
+      blockTitle: 'TrueSkill & Match Stats',
+      blockSubtitle: 'Summaries of black/white wins, ladder standings, and average thinking time.',
+      cta: 'Open Gomoku',
+      trueSkillDescription: 'CR (μ - 3σ) ordering of the Gomoku TrueSkill ratings.',
+      trueSkillEmpty: 'Finish a Gomoku match to populate the ladder.',
+    },
+  },
+};
+
 type Props = {
   games: GameDefinition[];
   onSelectGame: (id: GameId) => void;
@@ -46,7 +184,7 @@ type MatchResolverResult = {
   labelMap?: Record<string, string>;
 };
 
-type MatchResolver = () => MatchResolverResult;
+type MatchResolver = (lang: Lang) => MatchResolverResult;
 
 type StatsConfig = {
   tsKey: string;
@@ -65,12 +203,18 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
     tsSchema: 'ddz-trueskill@1',
     latencyKey: 'ddz_latency_store_v1',
     latencySchema: 'ddz-latency@3',
-    resolveMatches: () => {
+    resolveMatches: (lang) => {
       const players = readDdzLadderPlayers();
       const { totalMatches, playerGameSum } = computeDdzTotalMatches(players);
+      const locale = LOCALES[lang];
+      const format = new Intl.NumberFormat(locale);
       const detail = playerGameSum
-        ? `全部选手共计 ${playerGameSum} 局参与记录 → 折算约 ${totalMatches} 场（三人一局）`
-        : '等待第一局对战完成后自动生成统计';
+        ? lang === 'zh'
+          ? `全部选手共计 ${format.format(playerGameSum)} 局参与记录 → 折算约 ${format.format(totalMatches)} 场（三人一局）`
+          : `All entrants logged ${format.format(playerGameSum)} player-games → roughly ${format.format(totalMatches)} matches (3 seats per round).`
+        : lang === 'zh'
+        ? '等待第一局对战完成后自动生成统计'
+        : 'Play the first match to generate these stats.';
       const labelMap = players.reduce<Record<string, string>>((map, player) => {
         map[player.id] = player.label;
         return map;
@@ -83,10 +227,16 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
     tsSchema: 'gobang-trueskill@1',
     latencyKey: 'gobang_latency_store_v1',
     latencySchema: 'gobang-latency@1',
-    resolveMatches: () => {
+    resolveMatches: (lang) => {
       const store = readMatchSummaryStore(GOBANG_MATCH_KEY, GOBANG_MATCH_SCHEMA);
       const wins = store.wins || {};
-      const detail = `黑方 ${wins.black ?? 0}｜白方 ${wins.white ?? 0}｜平局 ${store.totals.draws ?? 0}`;
+      const locale = LOCALES[lang];
+      const format = new Intl.NumberFormat(locale);
+      const detail = lang === 'zh'
+        ? `黑方 ${format.format(wins.black ?? 0)}｜白方 ${format.format(wins.white ?? 0)}｜平局 ${format.format(store.totals.draws ?? 0)}`
+        : `Black ${format.format(wins.black ?? 0)} | White ${format.format(wins.white ?? 0)} | Draws ${format.format(
+            store.totals.draws ?? 0,
+          )}`;
       return { total: store.totals.matches ?? 0, detail };
     },
   },
@@ -131,23 +281,23 @@ function buildLatencySummary(store: LatencyStore): { avg: number | null; samples
   return { avg: weightedSum / totalSamples, samples: totalSamples };
 }
 
-function formatNumber(value: number | null | undefined): string {
+function formatNumber(value: number | null | undefined, locale: string): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return '—';
   }
   try {
-    return new Intl.NumberFormat('zh-CN').format(value);
+    return new Intl.NumberFormat(locale).format(value);
   } catch {
     return String(value);
   }
 }
 
-function formatTimestamp(value?: string): string {
+function formatTimestamp(value: string | undefined, locale: string): string {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   try {
-    return new Intl.DateTimeFormat('zh-CN', {
+    return new Intl.DateTimeFormat(locale, {
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
@@ -161,29 +311,34 @@ function formatTimestamp(value?: string): string {
 
 type TrueSkillTableProps = {
   ladder: LadderEntry[];
+  lang: Lang;
   title?: string;
   description?: string;
   emptyHint?: string;
 };
 
-function TrueSkillTable({ ladder, title = 'TrueSkill 天梯', description, emptyHint }: TrueSkillTableProps) {
+function TrueSkillTable({ ladder, lang, title, description, emptyHint }: TrueSkillTableProps) {
+  const computedTitle = title ?? (lang === 'zh' ? 'TrueSkill 天梯' : 'TrueSkill Ladder');
+  const labels = lang === 'zh'
+    ? { player: '选手', mu: 'μ', sigma: 'σ', cr: 'CR', empty: '暂无 TrueSkill 数据，完成一局对局后即可自动生成天梯。' }
+    : { player: 'Player', mu: 'μ', sigma: 'σ', cr: 'CR', empty: 'No TrueSkill data yet—finish a match to populate the ladder.' };
   if (!ladder.length) {
-    return <div className={styles.emptyState}>{emptyHint || '暂无 TrueSkill 数据，完成一局对局后即可自动生成天梯。'}</div>;
+    return <div className={styles.emptyState}>{emptyHint || labels.empty}</div>;
   }
   return (
     <div className={styles.tableShell}>
       <div className={styles.tableHeading}>
-        <p className={styles.blockTitle}>{title}</p>
+        <p className={styles.blockTitle}>{computedTitle}</p>
         {description ? <p className={styles.sectionSubtitle}>{description}</p> : null}
       </div>
       <div className={styles.tableScroll}>
         <table className={styles.table}>
           <thead>
             <tr>
-              <th>选手</th>
-              <th>μ</th>
-              <th>σ</th>
-              <th>CR</th>
+              <th>{labels.player}</th>
+              <th>{labels.mu}</th>
+              <th>{labels.sigma}</th>
+              <th>{labels.cr}</th>
             </tr>
           </thead>
           <tbody>
@@ -205,6 +360,9 @@ function TrueSkillTable({ ladder, title = 'TrueSkill 天梯', description, empty
 export default function HomeDashboard({ games, onSelectGame }: Props) {
   const [snapshots, setSnapshots] = useState<Partial<Record<GameId, GameStatsSnapshot>>>({});
   const [refreshToken, setRefreshToken] = useState(0);
+  const [lang, setLang] = useState<Lang>('zh');
+  const copy = COPY[lang];
+  const locale = LOCALES[lang];
 
   const refreshStats = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -215,7 +373,7 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
         if (!config) return;
         const tsStore = readTrueSkillStore(config.tsKey, config.tsSchema);
         const latencyStore = readLatencyStore(config.latencyKey, config.latencySchema);
-        const matches = config.resolveMatches();
+        const matches = config.resolveMatches(lang);
         const ladder = buildLadder(tsStore, matches.labelMap);
         const latency = buildLatencySummary(latencyStore);
         next[game.id as GameId] = {
@@ -233,7 +391,7 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
       return next;
     });
     setRefreshToken((token) => token + 1);
-  }, [games]);
+  }, [games, lang]);
 
   useEffect(() => {
     refreshStats();
@@ -246,15 +404,6 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
     };
   }, [refreshStats]);
 
-  const heroItems = useMemo(
-    () => [
-      '平台仅用于 AI 对抗研究与教学演示，不构成任何竞技或赌博活动。',
-      '实时数据包含天梯、TrueSkill、思考耗时及局数，请合理解读。',
-      '使用外置 AI 需遵守各模型服务条款，所有 API Key 仅存储在本地浏览器。',
-    ],
-    [],
-  );
-
   const lastUpdatedLabel = useMemo(() => {
     const timestamps: string[] = [];
     Object.values(snapshots).forEach((snapshot) => {
@@ -263,8 +412,8 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
     });
     if (!timestamps.length) return '—';
     const latestIso = timestamps.sort().at(-1);
-    return formatTimestamp(latestIso);
-  }, [snapshots]);
+    return formatTimestamp(latestIso, locale);
+  }, [snapshots, locale]);
 
   return (
     <div className={styles.dashboard}>
@@ -272,20 +421,30 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
         <div className={styles.heroHeader}>
           <div>
             <p className={styles.timestamp}>AI GAMES HOME</p>
-            <h2 className={styles.heroTitle}>开放式 AI 博弈实验室</h2>
-            <p className={styles.heroIntro}>
-              统一的平台入口展示所有游戏的天梯、思考耗时与参赛局数，也提供微信打赏与免责声明等信息。
-            </p>
+            <h2 className={styles.heroTitle}>{copy.heroTitle}</h2>
+            <p className={styles.heroIntro}>{copy.heroIntro}</p>
           </div>
           <div className={styles.heroActions}>
+            <div className={styles.langToggle}>
+              {LANG_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setLang(option.id)}
+                  className={`${styles.langButton} ${lang === option.id ? styles.langButtonActive : ''}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <SiteInfoButtons
-              lang="zh"
-              trailingNode={<DonationWidget lang="zh" className={styles.donationButton} />}
+              lang={lang}
+              trailingNode={<DonationWidget lang={lang} className={styles.donationButton} />}
             />
           </div>
         </div>
         <ul className={styles.heroList}>
-          {heroItems.map((item) => (
+          {copy.heroItems.map((item) => (
             <li key={item} className={styles.heroListItem}>
               <strong>•</strong>
               {item}
@@ -293,23 +452,23 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
           ))}
         </ul>
         <div className={styles.disclaimer}>
-          <p style={{ fontWeight: 600, margin: '0 0 6px' }}>免责声明</p>
-          <p style={{ margin: 0 }}>
-            平台所有统计与排行榜均来源于用户本地浏览器，可能因缓存或离线原因与实际训练结果存在差异；任何数据仅供研究参考。
-          </p>
+          <p style={{ fontWeight: 600, margin: '0 0 6px' }}>{copy.disclaimerTitle}</p>
+          <p style={{ margin: 0 }}>{copy.disclaimerBody}</p>
         </div>
       </section>
 
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <div>
-            <p className={styles.timestamp}>实时统计</p>
-            <h2 className={styles.sectionTitle}>积分 / 天梯 / 耗时</h2>
-            <p className={styles.sectionSubtitle}>斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。</p>
-            <p className={styles.timestamp}>最新刷新：{lastUpdatedLabel}</p>
+            <p className={styles.timestamp}>{copy.statsTimestamp}</p>
+            <h2 className={styles.sectionTitle}>{copy.statsTitle}</h2>
+            <p className={styles.sectionSubtitle}>{copy.statsSubtitle}</p>
+            <p className={styles.timestamp}>
+              {copy.latestRefreshLabel}: {lastUpdatedLabel}
+            </p>
           </div>
           <button type="button" onClick={refreshStats} className={styles.refreshButton}>
-            手动刷新
+            {copy.refreshButton}
           </button>
         </div>
 
@@ -317,40 +476,46 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
           <div className={styles.statsBlock}>
             <div className={styles.blockHeader}>
               <div>
-                <p className={styles.timestamp}>斗地主</p>
-                <h3 className={styles.blockTitle}>积分榜 / 累计局数</h3>
-                <p className={styles.blockSubtitle}>与对局界面一致的积分排行、局数统计与耗时概览。</p>
+                <p className={styles.timestamp}>{copy.ddz.timestamp}</p>
+                <h3 className={styles.blockTitle}>{copy.ddz.blockTitle}</h3>
+                <p className={styles.blockSubtitle}>{copy.ddz.blockSubtitle}</p>
               </div>
               <button type="button" onClick={() => onSelectGame('ddz' as GameId)} className={styles.ctaButton}>
-                进入斗地主
+                {copy.ddz.cta}
               </button>
             </div>
             <dl className={styles.statsGrid}>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>累计局数</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.ddz?.totalMatches ?? null)}</dd>
+                <dt className={styles.statLabel}>{copy.statLabels.totalMatches}</dt>
+                <dd className={styles.statValue}>{formatNumber(snapshots.ddz?.totalMatches ?? null, locale)}</dd>
                 {snapshots.ddz?.matchDetail ? <p className={styles.statDetail}>{snapshots.ddz.matchDetail}</p> : null}
               </div>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>平均耗时</dt>
+                <dt className={styles.statLabel}>{copy.statLabels.avgLatency}</dt>
                 <dd className={styles.statValue}>
                   {snapshots.ddz?.latencyAvg != null ? `${Math.round(snapshots.ddz.latencyAvg)} ms` : '—'}
                 </dd>
-                <p className={styles.statDetail}>样本 {formatNumber(snapshots.ddz?.latencySamples ?? null)}</p>
+                <p className={styles.statDetail}>
+                  {copy.statLabels.samples} {formatNumber(snapshots.ddz?.latencySamples ?? null, locale)}
+                </p>
               </div>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>天梯选手</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.ddz?.playerCount ?? null)}</dd>
-                <p className={styles.statDetail}>更新 {formatTimestamp(snapshots.ddz?.ladderUpdatedAt)}</p>
+                <dt className={styles.statLabel}>{copy.statLabels.players}</dt>
+                <dd className={styles.statValue}>{formatNumber(snapshots.ddz?.playerCount ?? null, locale)}</dd>
+                <p className={styles.statDetail}>
+                  {copy.statLabels.updated} {formatTimestamp(snapshots.ddz?.ladderUpdatedAt, locale)}
+                </p>
               </div>
             </dl>
 
             <div className={styles.cardStack}>
-              <DdzLadderCard refreshToken={refreshToken} />
+              <DdzLadderCard refreshToken={refreshToken} lang={lang} />
               <TrueSkillTable
+                lang={lang}
                 ladder={snapshots.ddz?.ladder ?? []}
-                description="按 CR 排序（μ - 3σ），同步展示当前斗地主 TrueSkill 天梯。"
-                emptyHint="暂无 TrueSkill 数据，完成一局斗地主后即可生成天梯。"
+                title={copy.trueSkillTitle}
+                description={copy.ddz.trueSkillDescription}
+                emptyHint={copy.ddz.trueSkillEmpty}
               />
             </div>
           </div>
@@ -358,38 +523,44 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
           <div className={styles.statsBlock}>
             <div className={styles.blockHeader}>
               <div>
-                <p className={styles.timestamp}>五子棋</p>
-                <h3 className={styles.blockTitle}>TrueSkill / 对局统计</h3>
-                <p className={styles.blockSubtitle}>展示黑白双方累计胜负、TrueSkill 排名与平均耗时。</p>
+                <p className={styles.timestamp}>{copy.gobang.timestamp}</p>
+                <h3 className={styles.blockTitle}>{copy.gobang.blockTitle}</h3>
+                <p className={styles.blockSubtitle}>{copy.gobang.blockSubtitle}</p>
               </div>
               <button type="button" onClick={() => onSelectGame('gobang' as GameId)} className={styles.ctaButton}>
-                进入五子棋
+                {copy.gobang.cta}
               </button>
             </div>
             <dl className={styles.statsGrid}>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>累计局数</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.totalMatches ?? null)}</dd>
+                <dt className={styles.statLabel}>{copy.statLabels.totalMatches}</dt>
+                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.totalMatches ?? null, locale)}</dd>
                 {snapshots.gobang?.matchDetail ? <p className={styles.statDetail}>{snapshots.gobang.matchDetail}</p> : null}
               </div>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>平均耗时</dt>
+                <dt className={styles.statLabel}>{copy.statLabels.avgLatency}</dt>
                 <dd className={styles.statValue}>
                   {snapshots.gobang?.latencyAvg != null ? `${Math.round(snapshots.gobang.latencyAvg)} ms` : '—'}
                 </dd>
-                <p className={styles.statDetail}>样本 {formatNumber(snapshots.gobang?.latencySamples ?? null)}</p>
+                <p className={styles.statDetail}>
+                  {copy.statLabels.samples} {formatNumber(snapshots.gobang?.latencySamples ?? null, locale)}
+                </p>
               </div>
               <div className={styles.statCard}>
-                <dt className={styles.statLabel}>天梯选手</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.playerCount ?? null)}</dd>
-                <p className={styles.statDetail}>更新 {formatTimestamp(snapshots.gobang?.ladderUpdatedAt)}</p>
+                <dt className={styles.statLabel}>{copy.statLabels.players}</dt>
+                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.playerCount ?? null, locale)}</dd>
+                <p className={styles.statDetail}>
+                  {copy.statLabels.updated} {formatTimestamp(snapshots.gobang?.ladderUpdatedAt, locale)}
+                </p>
               </div>
             </dl>
 
             <TrueSkillTable
+              lang={lang}
               ladder={snapshots.gobang?.ladder ?? []}
-              description="按 CR 排序（μ - 3σ），实时展示黑白双方的 TrueSkill 评级。"
-              emptyHint="暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。"
+              title={copy.trueSkillTitle}
+              description={copy.gobang.trueSkillDescription}
+              emptyHint={copy.gobang.trueSkillEmpty}
             />
           </div>
         </div>

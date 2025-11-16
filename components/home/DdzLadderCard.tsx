@@ -9,9 +9,57 @@ import styles from './DdzLadderCard.module.css';
 const LATENCY_KEY = 'ddz_latency_store_v1';
 const LATENCY_SCHEMA = 'ddz-latency@3';
 
-export default function DdzLadderCard({ refreshToken }: { refreshToken: number }) {
+type Lang = 'zh' | 'en';
+
+const TEXT: Record<Lang, {
+  scoreTitle: string;
+  scoreDesc: string;
+  matchesTitle: string;
+  matchesDesc: string;
+  matchesUnit: string;
+  latencyTitle: string;
+  latencyDesc: string;
+  latencySampleLabel: string;
+  latencyEmpty: string;
+  empty: string;
+}> = {
+  zh: {
+    scoreTitle: '积分',
+    scoreDesc: '实时 ΔR 变化，灰色竖线表示 0 分。',
+    matchesTitle: '累计局数',
+    matchesDesc: '按参赛次数排序，蓝色柱条越长代表局数越多。',
+    matchesUnit: '局',
+    latencyTitle: '思考耗时统计',
+    latencyDesc: '按平均耗时从快到慢排列，灰色文本表示样本量。',
+    latencySampleLabel: '样本',
+    latencyEmpty: '暂无耗时样本，完成一局后即可自动生成统计。',
+    empty: '暂无积分数据，开始一场斗地主对局后会自动记录。',
+  },
+  en: {
+    scoreTitle: 'Score ΔR',
+    scoreDesc: 'Live ΔR swings; the gray divider marks zero.',
+    matchesTitle: 'Total Games',
+    matchesDesc: 'Sorted by participation count; longer bars mean more games played.',
+    matchesUnit: 'games',
+    latencyTitle: 'Thinking Latency',
+    latencyDesc: 'Fastest to slowest average decision time. Gray text shows sample size.',
+    latencySampleLabel: 'Samples',
+    latencyEmpty: 'No latency samples yet—finish a round to populate this view.',
+    empty: 'No rating data yet. Play a Dou Dizhu match to start tracking.',
+  },
+};
+
+const LOCALES: Record<Lang, string> = {
+  zh: 'zh-CN',
+  en: 'en-US',
+};
+
+export default function DdzLadderCard({ refreshToken, lang }: { refreshToken: number; lang: Lang }) {
   const [players, setPlayers] = useState<DdzLadderPlayer[]>(() => readDdzLadderPlayers());
   const [latencyStore, setLatencyStore] = useState<LatencyStore>(() => readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA));
+  const copy = TEXT[lang];
+  const locale = LOCALES[lang];
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
 
   useEffect(() => {
     setPlayers(readDdzLadderPlayers());
@@ -61,14 +109,14 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
   }, [latencyStore]);
 
   if (!players.length) {
-    return <div className={styles.empty}>暂无积分数据，开始一场斗地主对局后会自动记录。</div>;
+    return <div className={styles.empty}>{copy.empty}</div>;
   }
 
   return (
     <div className={styles.card}>
       <div className={styles.header}>
-        <h4 className={styles.headerTitle}>积分</h4>
-        <p className={styles.headerText}>实时 ΔR 变化，灰色竖线表示 0 分。</p>
+        <h4 className={styles.headerTitle}>{copy.scoreTitle}</h4>
+        <p className={styles.headerText}>{copy.scoreDesc}</p>
       </div>
       <div className={`${styles.grid} ${styles.gridScores}`}>
         {byScore.map((player) => {
@@ -95,8 +143,8 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
       </div>
 
       <div className={styles.segment}>
-        <h4 className={styles.segmentTitle}>累计局数</h4>
-        <p className={styles.segmentDesc}>按参赛次数排序，蓝色柱条越长代表局数越多。</p>
+        <h4 className={styles.segmentTitle}>{copy.matchesTitle}</h4>
+        <p className={styles.segmentDesc}>{copy.matchesDesc}</p>
         <div className={`${styles.grid} ${styles.gridMatches}`}>
           {byMatches.map((player) => {
             const pct = Math.min(1, (player.matches || 0) / (maxMatches || 1));
@@ -106,7 +154,9 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
                 <div className={styles.matchTrack}>
                   <div className={styles.matchFill} style={{ width: `${pct * 100}%` }} />
                 </div>
-                <div className={styles.value}>{new Intl.NumberFormat('zh-CN').format(Math.round(player.matches))} 局</div>
+                <div className={styles.value}>
+                  {numberFormatter.format(Math.round(player.matches))} {copy.matchesUnit}
+                </div>
               </div>
             );
           })}
@@ -114,8 +164,8 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
       </div>
 
       <div className={styles.segment}>
-        <h4 className={styles.segmentTitle}>思考耗时统计</h4>
-        <p className={styles.segmentDesc}>按平均耗时从快到慢排列，灰色文本表示样本量。</p>
+        <h4 className={styles.segmentTitle}>{copy.latencyTitle}</h4>
+        <p className={styles.segmentDesc}>{copy.latencyDesc}</p>
         {latencyRows.rows.length ? (
           <div className={`${styles.grid} ${styles.gridLatency}`}>
             {latencyRows.rows.map((entry) => {
@@ -128,14 +178,16 @@ export default function DdzLadderCard({ refreshToken }: { refreshToken: number }
                   </div>
                   <div className={`${styles.value} ${styles.latencyValue}`}>
                     <span>{entry.mean.toFixed(1)} ms</span>
-                    <span className={styles.latencySamples}>样本 {new Intl.NumberFormat('zh-CN').format(entry.count)}</span>
+                    <span className={styles.latencySamples}>
+                      {copy.latencySampleLabel} {numberFormatter.format(entry.count)}
+                    </span>
                   </div>
                 </div>
               );
             })}
           </div>
         ) : (
-          <p className={styles.segmentEmpty}>暂无耗时样本，完成一局后即可自动生成统计。</p>
+          <p className={styles.segmentEmpty}>{copy.latencyEmpty}</p>
         )}
       </div>
     </div>
