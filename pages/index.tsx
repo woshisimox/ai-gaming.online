@@ -4,6 +4,7 @@ import type { GameDefinition, GameId } from '../games';
 import { GAME_REGISTRY, listGames } from '../games';
 import HomeDashboard from '../components/home/HomeDashboard';
 import { readSiteLanguage, subscribeSiteLanguage, type SiteLanguage } from '../lib/siteLanguage';
+import styles from './index.module.css';
 
 type RendererComponent = () => JSX.Element;
 
@@ -52,7 +53,7 @@ export default function HomePage() {
 
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto w-full max-w-6xl px-4 py-6">
-          <nav className="flex flex-wrap gap-2">
+          <nav className={styles.tabHeader}>
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -60,10 +61,8 @@ export default function HomePage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                    isActive
-                      ? 'border-slate-900 bg-slate-900 text-white shadow-sm'
-                      : 'border-slate-200 bg-white/70 text-slate-600 hover:border-slate-300 hover:text-slate-900'
+                  className={`${styles.tabButton} ${
+                    isActive ? styles.tabButtonActive : styles.tabButtonInactive
                   }`}
                 >
                   <div className="flex flex-col items-start">
