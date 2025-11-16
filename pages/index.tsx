@@ -23,7 +23,7 @@ export default function HomePage() {
 
   const tabs: Array<{ id: TabId; label: string; subtitle?: string }> = [
     { id: 'home', label: '首页', subtitle: '打赏 / 免责声明 / 总览' },
-    ...games.map((game) => ({ id: game.id as GameId, label: game.displayName, subtitle: game.description })),
+    ...games.map((game) => ({ id: game.id as GameId, label: game.displayName })),
   ];
 
   return (
@@ -35,12 +35,7 @@ export default function HomePage() {
 
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
         <div className="mx-auto w-full max-w-6xl px-4 py-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-slate-900">ai-gaming.online</h1>
-            </div>
-          </div>
-          <nav className="mt-6 flex flex-wrap gap-2">
+          <nav className="flex flex-wrap gap-2">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
