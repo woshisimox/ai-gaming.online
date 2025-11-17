@@ -4,6 +4,10 @@ import { ddzEngine } from './ddz/game';
 import type { DdzAction, DdzState } from './ddz/game';
 import ddzConfig from './ddz/config.json';
 import DdzRenderer from './ddz/renderer';
+import { debateEngine } from './debate/game';
+import type { DebateState } from './debate/game';
+import debateConfig from './debate/config.json';
+import DebateRenderer from './debate/renderer';
 import { gobangEngine } from './gobang/game';
 import type { GobangAction, GobangState } from './gobang/game';
 import gobangConfig from './gobang/config.json';
@@ -39,9 +43,20 @@ const gobangDefinition: GameDefinition<GobangState, GobangAction> = {
   renderer: GobangRenderer,
 };
 
+const debateDefinition: GameDefinition<DebateState, any> = {
+  id: debateConfig.id,
+  name: debateConfig.name,
+  displayName: debateConfig.displayName,
+  maxPlayers: debateConfig.maxPlayers,
+  description: debateConfig.description,
+  engine: debateEngine,
+  renderer: DebateRenderer,
+};
+
 export const GAME_REGISTRY = {
   [ddzConfig.id]: ddzDefinition,
   [gobangConfig.id]: gobangDefinition,
+  [debateConfig.id]: debateDefinition,
 } as const;
 
 export type GameId = keyof typeof GAME_REGISTRY;
