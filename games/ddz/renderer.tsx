@@ -387,6 +387,7 @@ type BotCredentials = {
   kimi?: string;
   qwen?: string;
   deepseek?: string;
+  deepseekBase?: string;
   httpBase?: string;
   httpToken?: string;
 };
@@ -513,6 +514,16 @@ function makeDefaultKnockoutEntries(): KnockoutEntry[] {
   return entries;
 }
 
+function readProviderBase(choice: BotChoice, keys?: BotCredentials | null): string {
+  if (choice === 'http') {
+    return (keys?.httpBase || '').trim();
+  }
+  if (choice === 'ai:deepseek') {
+    return (keys?.deepseekBase || '').trim();
+  }
+  return '';
+}
+
 function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   const base: BotCredentials = typeof raw === 'object' && raw ? raw : {};
   const out: BotCredentials = {};
@@ -522,11 +533,15 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   if (typeof base.kimi === 'string') out.kimi = base.kimi;
   if (typeof base.qwen === 'string') out.qwen = base.qwen;
   if (typeof base.deepseek === 'string') out.deepseek = base.deepseek;
+  if (typeof base.deepseekBase === 'string') out.deepseekBase = base.deepseekBase;
   if (typeof base.httpBase === 'string') out.httpBase = base.httpBase;
   if (typeof base.httpToken === 'string') out.httpToken = base.httpToken;
   if (choice === 'http') {
     if (out.httpBase === undefined) out.httpBase = '';
     if (out.httpToken === undefined) out.httpToken = '';
+  }
+  if (choice === 'ai:deepseek') {
+    if (out.deepseekBase === undefined) out.deepseekBase = '';
   }
   return out;
 }
@@ -536,17 +551,25 @@ function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
     const base = typeof raw?.httpBase === 'string' ? raw.httpBase : '';
     return base ? { httpBase: base } : {};
   }
+  if (choice === 'ai:deepseek') {
+    const base = typeof raw?.deepseekBase === 'string' ? raw.deepseekBase : '';
+    return base ? { deepseekBase: base } : {};
+  }
   return {};
 }
 
 function persistableKnockoutEntry(entry: KnockoutEntry) {
   const { keys, ...rest } = entry;
+  const safe: BotCredentials = {};
   if (entry.choice === 'http') {
     const base = typeof keys?.httpBase === 'string' ? keys.httpBase.trim() : '';
-    const safe: BotCredentials = {};
     if (base) safe.httpBase = base;
-    if (Object.keys(safe).length) return { ...rest, keys: safe };
-    return rest;
+  } else if (entry.choice === 'ai:deepseek') {
+    const base = typeof keys?.deepseekBase === 'string' ? keys.deepseekBase.trim() : '';
+    if (base) safe.deepseekBase = base;
+  }
+  if (Object.keys(safe).length) {
+    return { ...rest, keys: safe };
   }
   return rest;
 }
@@ -800,7 +823,7 @@ type LiveProps = {
   seats: BotChoice[];
   seatModels: string[];
   seatKeys: {
-    openai?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string;
+    openai?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string; deepseekBase?: string;
     httpBase?: string; httpToken?: string;
   }[];
   farmerCoop: boolean;
@@ -1683,7 +1706,7 @@ const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeTh
 
 function makeThoughtIdentity(choice: BotChoice, model?: string, base?: string): string {
   const normalizedModel = (model ?? defaultModelFor(choice) ?? '').trim();
-  const normalizedBase = choice === 'http' ? (base ?? '').trim() : '';
+  const normalizedBase = (base ?? '').trim();
   return `${choice}|${normalizedModel}|${normalizedBase}`;
 }
 
@@ -2048,7 +2071,11 @@ function KnockoutPanel() {
       payload.model = entry.model.trim();
     }
     if (entry.choice === 'http') {
-      payload.httpBase = (entry.keys?.httpBase || '').trim();
+      payload.httpBase = readProviderBase(entry.choice, entry.keys);
+    }
+    if (entry.choice === 'ai:deepseek') {
+      const base = readProviderBase(entry.choice, entry.keys);
+      if (base) payload.deepseekBase = base;
     }
     return JSON.stringify(payload);
   };
@@ -2065,8 +2092,12 @@ function KnockoutPanel() {
       if (model) payload.model = model;
     }
     if (entry.choice === 'http') {
-      const base = (entry.keys?.httpBase || '').trim();
+      const base = readProviderBase(entry.choice, entry.keys);
       if (base) payload.httpBase = base;
+    }
+    if (entry.choice === 'ai:deepseek') {
+      const base = readProviderBase(entry.choice, entry.keys);
+      if (base) payload.deepseekBase = base;
     }
     return JSON.stringify(payload);
   };
@@ -2213,11 +2244,18 @@ function KnockoutPanel() {
             } else {
               const model = (entry?.model || (typeof (parsed as any).model === 'string' ? (parsed as any).model as string : ''))
                 .trim();
-              const httpBase = (entry?.keys?.httpBase || (typeof (parsed as any).httpBase === 'string'
-                ? (parsed as any).httpBase as string
-                : ''))
-                .trim();
-              providerLabel = providerSummary(normalizedChoice, model, httpBase, lang);
+              const entryBase = readProviderBase(normalizedChoice, entry?.keys);
+              const tokenBase = (() => {
+                if (normalizedChoice === 'http') {
+                  return typeof (parsed as any).httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+                }
+                if (normalizedChoice === 'ai:deepseek') {
+                  return typeof (parsed as any).deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
+                }
+                return '';
+              })();
+              const customBase = entryBase || tokenBase;
+              providerLabel = providerSummary(normalizedChoice, model, customBase, lang);
             }
           }
           const merged = mergeAliasAndProvider(alias, providerLabel);
@@ -2253,13 +2291,22 @@ function KnockoutPanel() {
           : null;
         const modelFromEntry = entry?.model || '';
         const modelFromToken = typeof (parsed as any)?.model === 'string' ? (parsed as any).model as string : '';
-        const httpFromEntry = entry?.keys?.httpBase || '';
-        const httpFromToken = typeof (parsed as any)?.httpBase === 'string' ? (parsed as any).httpBase as string : '';
+        const baseFromEntry = normalizedChoice ? readProviderBase(normalizedChoice, entry?.keys) : '';
+        const baseFromToken = (() => {
+          if (!normalizedChoice) return '';
+          if (normalizedChoice === 'http') {
+            return typeof (parsed as any)?.httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+          }
+          if (normalizedChoice === 'ai:deepseek') {
+            return typeof (parsed as any)?.deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
+          }
+          return '';
+        })();
         const providerLabel = normalizedChoice
           ? providerSummary(
               normalizedChoice,
               (normalizedChoice.startsWith('ai:') ? (modelFromEntry || modelFromToken) : modelFromEntry) || '',
-              normalizedChoice === 'http' ? (httpFromEntry || httpFromToken) : httpFromEntry,
+              baseFromEntry || baseFromToken,
               lang,
             )
           : '';
@@ -2282,18 +2329,26 @@ function KnockoutPanel() {
           label,
           provider: entry.choice === 'human'
             ? humanProviderLabel
-            : providerSummary(entry.choice, entry.model, entry.keys?.httpBase, lang),
+            : providerSummary(entry.choice, entry.model, readProviderBase(entry.choice, entry.keys), lang),
         };
       }
       const rawChoice = typeof parsed?.choice === 'string' ? parsed.choice : '';
       if (KO_ALL_CHOICES.includes(rawChoice as BotChoice)) {
         const model = typeof parsed?.model === 'string' ? parsed.model : '';
-        const httpBase = typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
+        const baseFromToken = (() => {
+          if (rawChoice === 'http') {
+            return typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
+          }
+          if (rawChoice === 'ai:deepseek') {
+            return typeof parsed?.deepseekBase === 'string' ? parsed.deepseekBase : '';
+          }
+          return '';
+        })();
         return {
           label,
           provider: rawChoice === 'human'
             ? humanProviderLabel
-            : providerSummary(rawChoice as BotChoice, model, httpBase, lang),
+            : providerSummary(rawChoice as BotChoice, model, baseFromToken, lang),
         };
       }
     } catch {}
@@ -2620,7 +2675,7 @@ function KnockoutPanel() {
       label: ctx.labels[idx] || displayName(token),
       choice: ctx.seats[idx],
       model: ctx.seatModels[idx] || '',
-      httpBase: ctx.seatKeys[idx]?.httpBase || '',
+      baseUrl: readProviderBase(ctx.seats[idx], ctx.seatKeys[idx]),
     }));
     const rankedSummary = ranked.map(entry => {
       const pos = ctx.tokens.indexOf(entry.token);
@@ -3221,6 +3276,21 @@ function KnockoutPanel() {
                     />
                   </label>
                 )}
+                {entry.choice === 'ai:deepseek' && (
+                  <label style={{ display:'block', marginTop:6 }}>
+                    DeepSeek API 基础地址（可选）
+                    <input
+                      type="text"
+                      value={entry.keys?.deepseekBase || ''}
+                      onChange={e => handleEntryKeyChange(entry.id, 'deepseekBase', e.target.value)}
+                      style={{ width:'100%', marginTop:4 }}
+                      placeholder="https://api.deepseek.com/v1beta"
+                    />
+                    <div style={{ fontSize:12, color:'#6b7280', marginTop:4 }}>
+                      如果官方接口返回 402，可尝试将基础地址改为 v1beta。
+                    </div>
+                  </label>
+                )}
 
                 {entry.choice === 'http' && (
                   <>
@@ -3576,12 +3646,10 @@ function KnockoutPanel() {
                     const total = scoreboardTotals ? scoreboardTotals[idx] : null;
                     const seatChoice = currentMatch.seats[idx];
                     const model = (currentMatch.seatModels[idx] || '').trim();
-                    const httpBase = typeof currentMatch.seatKeys[idx]?.httpBase === 'string'
-                      ? currentMatch.seatKeys[idx]!.httpBase!.trim()
-                      : '';
+                    const baseOverride = readProviderBase(seatChoice, currentMatch.seatKeys[idx]);
                     const providerText = seatChoice === 'human'
                       ? humanProviderLabel
-                      : providerSummary(seatChoice, model, httpBase, lang);
+                      : providerSummary(seatChoice, model, baseOverride, lang);
                     return (
                       <div key={`${token}-score`} style={{ border:'1px solid #e5e7eb', borderRadius:8, padding:10, background:'#fff' }}>
                         <div style={{ fontWeight:700, marginBottom:4 }}>{label}</div>
@@ -3740,12 +3808,16 @@ function choiceLabel(choice: BotChoice): string {
   }
 }
 
-function providerSummary(choice: BotChoice, model: string | undefined, httpBase: string | undefined, lang: Lang = 'zh'): string {
+function providerSummary(choice: BotChoice, model: string | undefined, customBase: string | undefined, lang: Lang = 'zh'): string {
   const provider = choiceLabel(choice);
+  const base = (customBase || '').trim();
   if (choice === 'http') {
-    const base = (httpBase || '').trim();
     if (!base) return provider;
     const customLabel = lang === 'en' ? 'custom' : '自定义';
+    return `${provider} · ${customLabel}`;
+  }
+  if (choice === 'ai:deepseek' && base) {
+    const customLabel = lang === 'en' ? 'custom base' : '自定义接口';
     return `${provider} · ${customLabel}`;
   }
   if (choice.startsWith('ai:')) {
@@ -3988,7 +4060,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const choice = props.seats[i] as BotChoice;
     const modelInput = Array.isArray(props.seatModels) ? props.seatModels[i] : undefined;
     const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || defaultModelFor(choice);
-    const base = choice === 'http' ? (props.seatKeys?.[i]?.httpBase || '') : '';
+    const base = readProviderBase(choice, props.seatKeys?.[i]);
     return makeThoughtIdentity(choice, normalizedModel, base);
   }, [props.seats, props.seatModels, props.seatKeys]);
   const botCallIssuedAtRef = useRef<Record<number, number>>({});
@@ -4694,8 +4766,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       entry.roles[role] = { ...updated[i] };
       const choice = props.seats[i];
       const model  = (props.seatModels[i] || '').trim();
-      const base   = choice==='http' ? (props.seatKeys[i]?.httpBase || '') : '';
-      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { httpBase: base } : {}) };
+      const base   = readProviderBase(choice, props.seatKeys[i]);
+      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       tsStoreRef.current.players[id] = entry;
     }
     writeStore(tsStoreRef.current);
@@ -4741,7 +4813,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     id: string; // 身份：choice|model|base（沿用 seatIdentity）
     overall?: RadarAgg | null;  // 不区分身份时累计
     roles?: { landlord?: RadarAgg | null; farmer?: RadarAgg | null }; // 按角色分档
-    meta?: { choice?: string; model?: string; httpBase?: string };
+    meta?: { choice?: string; model?: string; baseUrl?: string };
   };
   type RadarStore = {
     schema: 'ddz-radar@1';
@@ -4891,8 +4963,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       }
       const choice = props.seats[i];
       const model  = (props.seatModels[i] || '').trim();
-      const base   = choice==='http' ? (props.seatKeys[i]?.httpBase || '') : '';
-      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { httpBase: base } : {}) };
+      const base   = readProviderBase(choice, props.seatKeys[i]);
+      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       radarStoreRef.current.players[id] = entry;
     }
     // writeRadarStore disabled (no radar persistence)
@@ -5132,7 +5204,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
           case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
           case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '' };
           case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
-          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '' };
+          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '', baseUrl: readProviderBase(choice, keys) };
           case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
@@ -5144,6 +5216,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         const nm = seatName(i);
         if (s.choice.startsWith('built-in')) return `${nm}=${choiceLabel(s.choice as BotChoice)}`;
         if (s.choice === 'http') return `${nm}=HTTP(${s.baseUrl ? 'custom' : 'default'})`;
+        if (s.choice === 'ai:deepseek') return `${nm}=DeepSeek(${s.baseUrl ? 'custom' : 'default'})`;
         return `${nm}=${choiceLabel(s.choice as BotChoice)}(${s.model || defaultModelFor(s.choice as BotChoice)})`;
       }).join(', ');
 
@@ -7111,7 +7184,11 @@ const DEFAULTS = {
   seats: ['built-in:greedy-max','built-in:greedy-min','built-in:random-legal'] as BotChoice[],
   // 让选择提供商时自动写入推荐模型；避免初始就带上 OpenAI 的模型名
   seatModels: ['', '', ''],
-  seatKeys: [{ openai:'' }, { gemini:'' }, { httpBase:'', httpToken:'' }] as any[],};
+  seatKeys: [
+    { openai:'', deepseekBase:'' },
+    { gemini:'', deepseekBase:'' },
+    { httpBase:'', httpToken:'', deepseekBase:'' },
+  ] as any[],};
 
 function DdzRenderer() {
   const [lang, setLang] = useState<Lang>(() => readSiteLanguage() ?? 'zh');
@@ -7253,6 +7330,7 @@ function DdzRenderer() {
         key: keyof (typeof seatKeys)[number],
         label: string,
         type: 'text' | 'password' = 'password',
+        placeholder?: string,
       ) => {
         const safeKey = String(key);
         return (
@@ -7270,6 +7348,7 @@ function DdzRenderer() {
                 });
               }}
               style={{ width: '100%' }}
+              placeholder={placeholder}
             />
           </label>
         );
@@ -7279,7 +7358,31 @@ function DdzRenderer() {
       if (choice === 'ai:grok') blocks.push(pushKeyField('grok', 'xAI (Grok) API Key'));
       if (choice === 'ai:kimi') blocks.push(pushKeyField('kimi', 'Kimi API Key'));
       if (choice === 'ai:qwen') blocks.push(pushKeyField('qwen', 'Qwen API Key'));
-      if (choice === 'ai:deepseek') blocks.push(pushKeyField('deepseek', 'DeepSeek API Key'));
+      if (choice === 'ai:deepseek') {
+        blocks.push(pushKeyField('deepseek', 'DeepSeek API Key'));
+        blocks.push(
+          <label key={`deepseek-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            DeepSeek API 基础地址（可选）
+            <input
+              type="text"
+              value={seatKeys[i]?.deepseekBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), deepseekBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+              placeholder="https://api.deepseek.com/v1beta"
+            />
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              若收到 402 余额不足，可尝试填写 v1beta 路径：如 https://api.deepseek.com/v1beta。
+            </div>
+          </label>,
+        );
+      }
       if (choice === 'http') {
         blocks.push(
           <label key={`http-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
@@ -7332,7 +7435,7 @@ function DdzRenderer() {
       const modelInput = Array.isArray(seatModels) ? seatModels[i] : '';
       const normalizedModel = normalizeModelForProvider(choice, modelInput || '')
         || (modelInput || defaultModelFor(choice));
-      const base = choice === 'http' ? (seatKeys?.[i]?.httpBase || '') : '';
+      const base = readProviderBase(choice, seatKeys?.[i]);
       const identity = makeThoughtIdentity(choice, normalizedModel, base);
       const label = thoughtLabelForIdentity(identity);
       return label || '';
@@ -7368,7 +7471,7 @@ function DdzRenderer() {
       label: seatInfoLabels[idx] || seatLabel(idx, lang),
       choice,
       model: seatModels[idx] || '',
-      httpBase: seatKeys[idx]?.httpBase || '',
+      baseUrl: readProviderBase(choice, seatKeys[idx]),
       human: choice === 'human',
     }));
     const summary = lang === 'en'

@@ -58,12 +58,37 @@ export interface ChatCompletionRequest {
   temperature?: number;
 }
 
-function resolveEndpoint(meta: ProviderMeta, baseUrl?: string): string {
-  if (meta.id === 'ai:qwen') {
-    return `${meta.base}/v1/chat/completions`;
+function normalizeBase(raw?: string): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function buildOverrideEndpoint(raw: string | undefined, defaultVersionSegment: string): string | null {
+  const base = normalizeBase(raw);
+  if (!base) return null;
+  if (/\/chat\/completions$/i.test(base)) {
+    return base;
   }
-  const base = meta.allowBaseOverride && baseUrl ? baseUrl.trim().replace(/\/$/, '') : meta.base;
-  return `${base}/v1/chat/completions`;
+  const hasVersionSuffix = /\/v\d[\w-]*$/i.test(base);
+  const version = hasVersionSuffix ? '' : defaultVersionSegment;
+  return `${base}${version}/chat/completions`;
+}
+
+function resolveEndpoint(meta: ProviderMeta, baseUrl?: string): string {
+  const defaultBase = normalizeBase(meta.base) ?? meta.base;
+  const defaultEndpoint = `${defaultBase}/v1/chat/completions`;
+  if (meta.id === 'ai:qwen') {
+    return defaultEndpoint;
+  }
+  if (meta.allowBaseOverride) {
+    const override = buildOverrideEndpoint(baseUrl, '/v1');
+    if (override) {
+      return override;
+    }
+  }
+  return defaultEndpoint;
 }
 
 export async function requestChatCompletion({

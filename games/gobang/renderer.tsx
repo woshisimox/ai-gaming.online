@@ -757,6 +757,17 @@ export default function GobangRenderer() {
                 />
                 <span className={styles.configHelp}>留空使用推荐模型 deepseek-chat。</span>
               </label>
+              <label className={styles.configLabel}>
+                API 基础地址（可选）
+                <input
+                  type="text"
+                  value={config.baseUrl ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { baseUrl: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="https://api.deepseek.com/v1beta"
+                />
+                <span className={styles.configHelp}>402 余额不足时，可尝试改用 v1beta 路径，如 https://api.deepseek.com/v1beta。</span>
+              </label>
             </div>
           );
         case 'ai:kimi':
