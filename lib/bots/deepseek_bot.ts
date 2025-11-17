@@ -64,14 +64,34 @@ function classifyError(error: any): RetryKind | null {
   return null;
 }
 
+function normalizeBase(raw?: string): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function resolveDeepseekEndpoint(baseUrl?: string): string {
+  const override = normalizeBase(baseUrl);
+  if (override) {
+    if (/\/chat\/completions$/i.test(override)) {
+      return override;
+    }
+    const hasVersionSuffix = /\/v\d[\w-]*$/i.test(override);
+    const version = hasVersionSuffix ? '' : '/v1';
+    return `${override}${version}/chat/completions`;
+  }
+  return 'https://api.deepseek.com/v1/chat/completions';
+}
+
 async function requestDeepseek(
-  o: { apiKey: string; model?: string },
+  o: { apiKey: string; model?: string; baseUrl?: string },
   ctx: BotCtx,
   phase: 'bid' | 'double' | 'play',
   mode: PromptMode
 ) {
   await throttle();
-  const endpoint = 'https://api.deepseek.com/v1/chat/completions';
+  const endpoint = resolveDeepseekEndpoint(o.baseUrl);
   const { system, user } = buildDouPrompts(ctx, phase, mode);
   const resp = await fetch(endpoint, {
     method: 'POST',
@@ -102,14 +122,14 @@ async function requestDeepseek(
   return { payload: parsed };
 }
 
-export function DeepseekBot({ apiKey, model }: { apiKey?: string; model?: string }) {
+export function DeepseekBot({ apiKey, model, baseUrl }: { apiKey?: string; model?: string; baseUrl?: string }) {
   return async function bot(ctx: BotCtx): Promise<BotMove> {
     let flagged: RetryKind | null = null;
     let usedMode: PromptMode = 'normal';
     try {
       if (!apiKey) throw new Error('DeepSeek API key 未配置');
       const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
-      const exec = (mode: PromptMode) => requestDeepseek({ apiKey, model }, ctx, phase, mode);
+      const exec = (mode: PromptMode) => requestDeepseek({ apiKey, model, baseUrl }, ctx, phase, mode);
       const preferSafe = Date.now() < _riskModeUntil;
       const attempts: PromptMode[] = preferSafe ? ['safe', 'minimal'] : ['normal', 'safe', 'minimal'];
       let lastErr: any;

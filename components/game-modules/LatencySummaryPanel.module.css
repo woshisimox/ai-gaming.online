@@ -1,0 +1,110 @@
+.panel {
+  border-radius: 18px;
+  border: 1px solid #e2e8f0;
+  padding: 20px;
+  background: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.header {
+  margin-bottom: 12px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0 0 4px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #475569;
+  margin: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 220px 1fr 180px;
+  gap: 12px 10px;
+}
+
+@media (max-width: 768px) {
+  .grid {
+    grid-template-columns: minmax(160px, 1fr) 1fr 160px;
+  }
+}
+
+@media (max-width: 640px) {
+  .grid {
+    grid-template-columns: minmax(140px, 1fr);
+  }
+
+  .row {
+    grid-template-columns: 1fr;
+    display: grid;
+    gap: 8px;
+  }
+}
+
+.row {
+  display: contents;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Heiti SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Segoe UI', sans-serif;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  position: relative;
+  height: 16px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #ecfeff;
+  overflow: hidden;
+}
+
+.fill {
+  position: absolute;
+  inset: 1px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #bae6fd, #38bdf8 55%, #0284c7);
+  box-shadow: 0 1px 2px rgba(14, 165, 233, 0.25);
+}
+
+.valueStack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: right;
+  justify-content: center;
+}
+
+.valuePrimary {
+  font-size: 14px;
+  color: #0f172a;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.valueMeta {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Heiti SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Segoe UI', sans-serif;
+}
+
+.empty {
+  border-radius: 16px;
+  border: 1px dashed #cbd5f5;
+  background: #f8fafc;
+  padding: 20px;
+  text-align: center;
+  font-size: 14px;
+  color: #475569;
+}
