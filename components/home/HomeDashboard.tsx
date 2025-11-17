@@ -76,7 +76,7 @@ const COPY: Record<Lang, CopyBlock> = {
     refreshButton: '手动刷新',
     statLabels: {
       totalMatches: '累计局数',
-      avgLatency: '平均耗时',
+      avgLatency: '思考耗时统计',
       players: '天梯选手',
       samples: '样本',
       updated: '更新',
