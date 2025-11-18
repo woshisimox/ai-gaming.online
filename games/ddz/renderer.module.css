@@ -114,3 +114,34 @@
 .fullWidth {
   width: 100%;
 }
+
+.cardBase {
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(226, 232, 240, 0.72));
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  position: relative;
+  isolation: isolate;
+}
+
+.cardInteractive:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.25);
+}
+
+.cardInteractive:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+}
+
+.cardInteractive:disabled {
+  cursor: not-allowed;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
+}
+
+.cardSelected {
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.35), 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.cardHidden {
+  background-image: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.7));
+}

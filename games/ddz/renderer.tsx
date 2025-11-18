@@ -1542,14 +1542,14 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
     ? { width: 28, height: 44, gap: 2, backSize: 18, suitSize: 16, rankSize: 12, paddingShown: '6px 4px', paddingHidden: '4px' }
     : { width: 38, height: 58, gap: 4, backSize: 24, suitSize: 22, rankSize: 16, paddingShown: '8px 6px', paddingHidden: '6px' };
 
-  let background = '#fff';
+  let backgroundColor = '#fff';
   let borderColor = '#ddd';
   let color = '#1f2937';
   let opacity = 1;
   let inner: ReactNode;
 
   if (hidden) {
-    background = selected ? '#bfdbfe' : '#1f2937';
+    backgroundColor = selected ? '#bfdbfe' : '#1f2937';
     borderColor = selected ? '#2563eb' : '#111827';
     color = '#f9fafb';
     inner = <span style={{ fontSize: dims.backSize, lineHeight: 1 }}>🂠</span>;
@@ -1573,7 +1573,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
       fontSize: dims.suitSize,
       lineHeight: 1,
     };
-    background = selected ? '#dbeafe' : (dimmed ? '#f3f4f6' : '#fff');
+    backgroundColor = selected ? '#dbeafe' : (dimmed ? '#f3f4f6' : '#fff');
     borderColor = selected ? '#2563eb' : (dimmed ? '#d1d5db' : '#ddd');
     color = suitColor;
     opacity = dimmed ? 0.65 : 1;
@@ -1584,6 +1584,11 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
       </>
     );
   }
+
+  const classNames = [styles.cardBase];
+  if (interactive) classNames.push(styles.cardInteractive);
+  if (selected) classNames.push(styles.cardSelected);
+  if (hidden) classNames.push(styles.cardHidden);
 
   const style: React.CSSProperties = {
     display: 'inline-flex',
@@ -1605,7 +1610,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
     minWidth: dims.width,
     height: dims.height,
     boxSizing: 'border-box',
-    background,
+    backgroundColor,
     borderColor,
     color,
     opacity,
@@ -1618,6 +1623,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
         onClick={disabled ? undefined : onClick}
         disabled={disabled}
         style={style}
+        className={classNames.join(' ')}
         title={hidden ? label : undefined}
       >
         {inner}
@@ -1626,7 +1632,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
   }
 
   return (
-    <span style={style} title={hidden ? label : undefined}>
+    <span style={style} className={classNames.join(' ')} title={hidden ? label : undefined}>
       {inner}
     </span>
   );
