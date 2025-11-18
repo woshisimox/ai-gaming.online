@@ -1,7 +1,10 @@
 import Head from 'next/head';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GameDefinition, GameId } from '../games';
 import { GAME_REGISTRY, listGames } from '../games';
+import HomeDashboard from '../components/home/HomeDashboard';
+import { readSiteLanguage, subscribeSiteLanguage, type SiteLanguage } from '../lib/siteLanguage';
+import styles from './index.module.css';
 
 type RendererComponent = () => JSX.Element;
 
@@ -9,13 +12,37 @@ function useGameList(): GameDefinition<any, any>[] {
   return useMemo(() => listGames(), []);
 }
 
+type TabId = 'home' | GameId;
+
 export default function HomePage() {
   const games = useGameList();
   const defaultId = (games[0]?.id ?? 'ddz') as GameId;
-  const [selectedGame, setSelectedGame] = useState<GameId>(defaultId);
+  const [activeTab, setActiveTab] = useState<TabId>('home');
+  const [lang, setLang] = useState<SiteLanguage>(() => readSiteLanguage() ?? 'zh');
 
-  const current = GAME_REGISTRY[selectedGame] ?? GAME_REGISTRY[defaultId];
-  const Renderer = (current?.renderer as RendererComponent) ?? (() => <div>Missing renderer</div>);
+  const selectedGameId: GameId = (activeTab === 'home' ? defaultId : activeTab) as GameId;
+  const current = GAME_REGISTRY[selectedGameId] ?? GAME_REGISTRY[defaultId];
+  const Renderer = current?.renderer as RendererComponent | undefined;
+
+  useEffect(() => {
+    const initial = readSiteLanguage();
+    if (initial) {
+      setLang(initial);
+    }
+    const unsubscribe = subscribeSiteLanguage((next) => {
+      setLang(next);
+    });
+    return unsubscribe;
+  }, []);
+
+  const homeLabel = lang === 'zh' ? '首页' : 'Home';
+  const tabs: Array<{ id: TabId; label: string; subtitle?: string }> = [
+    { id: 'home', label: homeLabel },
+    ...games.map((game) => ({
+      id: game.id as GameId,
+      label: lang === 'zh' ? game.displayName : game.name || game.displayName,
+    })),
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -25,34 +52,40 @@ export default function HomePage() {
       </Head>
 
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">ai-gaming.online</h1>
-            <p className="text-sm text-slate-600">Choose a game engine plugin to explore.</p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label htmlFor="game-select" className="text-sm font-medium text-slate-700">
-              Game
-            </label>
-            <select
-              id="game-select"
-              className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-slate-500 focus:outline-none focus:ring"
-              value={selectedGame}
-              onChange={(event) => setSelectedGame(event.target.value as GameId)}
-            >
-              {games.map((game) => (
-                <option key={game.id} value={game.id}>
-                  {game.displayName}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="mx-auto w-full max-w-6xl px-4 py-6">
+          <nav className={styles.tabHeader}>
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`${styles.tabButton} ${
+                    isActive ? styles.tabButtonActive : styles.tabButtonInactive
+                  }`}
+                >
+                  <div className="flex flex-col items-start">
+                    <span>{tab.label}</span>
+                    {tab.subtitle ? <span className="text-[11px] font-normal text-slate-400">{tab.subtitle}</span> : null}
+                  </div>
+                </button>
+              );
+            })}
+          </nav>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-4 py-8">
-        <Renderer />
+        {activeTab === 'home' ? (
+          <HomeDashboard games={games} onSelectGame={(id) => setActiveTab(id)} />
+        ) : Renderer ? (
+          <Renderer />
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/70 p-8 text-center text-sm text-slate-500">
+            暂未找到渲染器。
+          </div>
+        )}
       </main>
     </div>
   );

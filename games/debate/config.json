@@ -1,0 +1,7 @@
+{
+  "id": "debate",
+  "name": "AI Debate",
+  "displayName": "AI 辩论赛",
+  "maxPlayers": 3,
+  "description": "甲乙双方与评委组成的 AI 辩论赛。"
+}
