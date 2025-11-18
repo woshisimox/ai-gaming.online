@@ -33,6 +33,8 @@ export const OpenAIBot = (o: { apiKey: string; model?: string }): BotFunc =>
   async (ctx: BotCtx) => {
     try {
       if (!o.apiKey) throw new Error('Missing OpenAI API Key');
+      const model = (o.model || '').trim();
+      if (!model) throw new Error('Missing OpenAI model name');
       const url = 'https://api.openai.com/v1/chat/completions';
       const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
       const { system, user } = buildDouPrompts(ctx, phase, 'normal');
@@ -44,7 +46,7 @@ export const OpenAIBot = (o: { apiKey: string; model?: string }): BotFunc =>
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
         body: JSON.stringify({
-          model: o.model || 'gpt-4o-mini',
+          model,
           temperature: 0.2,
           messages
         })

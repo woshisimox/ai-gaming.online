@@ -1,9 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { GobangAction, GobangState } from './game';
 import { gobangEngine } from './game';
 import styles from './renderer.module.css';
+import {
+  Rating,
+  TS_DEFAULT,
+  applyRatingsFromStore,
+  createTrueSkillStore,
+  readTrueSkillStore,
+  writeTrueSkillStore,
+  tsUpdateTwoTeams,
+  type TrueSkillStore,
+} from '../../lib/game-modules/trueSkill';
+import {
+  LatencyStore,
+  ensureLatencyStore,
+  readLatencyStore,
+  writeLatencyStore,
+  updateLatencyStats,
+} from '../../lib/game-modules/latencyStore';
+import { readPlayerConfigs, writePlayerConfigs } from '../../lib/game-modules/playerConfigStore';
+import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
+import { TrueSkillArchivePanel } from '../../components/game-modules/TrueSkillArchivePanel';
+import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
+import {
+  ensureMatchSummaryStore,
+  incrementMatchSummary,
+  readMatchSummaryStore,
+  writeMatchSummaryStore,
+  type MatchSummaryStore,
+} from '../../lib/game-modules/matchStatsStore';
 
 const BOARD_SIZE = gobangEngine.initialState().data.board.length;
 
@@ -42,9 +70,13 @@ const PLAYERS: PlayerPresentation[] = [
 ];
 
 const INTERSECTION_HIT_SIZE = `calc((100% / ${BOARD_SIZE}) * 1.15)`;
-const STONE_SIZE = `calc((100% / ${BOARD_SIZE}) * 0.92)`;
-const GUIDE_DOT_SIZE = `calc((100% / ${BOARD_SIZE}) * 0.24)`;
-const LAST_MOVE_RING_SIZE = `calc((100% / ${BOARD_SIZE}) * 1.08)`;
+// Size tokens are relative to each intersection's hit area so that the stones scale
+// proportionally with the rendered board instead of being divided twice by the board size.
+const STONE_SIZE = 'calc(100% * 0.42)';
+const GUIDE_DOT_SIZE = 'calc(100% * 0.22)';
+const LAST_MOVE_RING_SIZE = 'calc(100% * 0.54)';
+
+const WIN_LENGTH = 5;
 
 function createPendingInitialState(): GobangState {
   const initial = gobangEngine.initialState();
@@ -54,17 +86,100 @@ function createPendingInitialState(): GobangState {
   };
 }
 
-type PlayerMode = 'human' | 'ai_random';
+type PlayerMode =
+  | 'human'
+  | 'builtin:random'
+  | 'ai:openai'
+  | 'ai:deepseek'
+  | 'ai:gemini'
+  | 'ai:grok'
+  | 'ai:kimi'
+  | 'ai:qwen'
+  | 'http';
+
+interface PlayerConfig {
+  mode: PlayerMode;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  token?: string;
+}
 
 const MODE_LABEL: Record<PlayerMode, string> = {
-  human: '人类',
-  ai_random: 'AI (随机)',
+  human: '人类选手',
+  'builtin:random': '内置 AI：随机+靠近',
+  'ai:openai': '外置 AI：OpenAI',
+  'ai:deepseek': '外置 AI：DeepSeek',
+  'ai:gemini': '外置 AI：Gemini',
+  'ai:grok': '外置 AI：Grok',
+  'ai:kimi': '外置 AI：Kimi',
+  'ai:qwen': '外置 AI：Qwen',
+  http: '外置 AI：HTTP Hook',
 };
 
-const MODE_OPTIONS: Array<{ value: PlayerMode; label: string }> = [
-  { value: 'human', label: '人类' },
-  { value: 'ai_random', label: 'AI (随机)' },
+const MODE_GROUPS: Array<{
+  label: string;
+  options: Array<{ value: PlayerMode; label: string; disabled?: boolean }>;
+}> = [
+  {
+    label: '人类',
+    options: [{ value: 'human', label: '人类选手' }],
+  },
+  {
+    label: '内置算法',
+    options: [{ value: 'builtin:random', label: '内置 AI：随机+靠近' }],
+  },
+  {
+    label: '外置 AI',
+    options: [
+      { value: 'ai:openai', label: 'OpenAI' },
+      { value: 'ai:deepseek', label: 'DeepSeek' },
+      { value: 'ai:gemini', label: 'Gemini', disabled: true },
+      { value: 'ai:grok', label: 'Grok', disabled: true },
+      { value: 'ai:kimi', label: 'Kimi' },
+      { value: 'ai:qwen', label: 'Qwen' },
+      { value: 'http', label: 'HTTP Hook', disabled: true },
+    ],
+  },
 ];
+
+const PLAYER_STORAGE_KEY = 'gobang_player_configs_v1';
+const TS_STORE_KEY = 'gobang_ts_store_v1';
+const TS_SCHEMA = 'gobang-trueskill@1';
+const LATENCY_KEY = 'gobang_latency_store_v1';
+const LATENCY_SCHEMA = 'gobang-latency@1';
+const MATCH_STATS_KEY = 'gobang_match_stats_v1';
+const MATCH_STATS_SCHEMA = 'gobang-match-stats@1';
+
+function sanitizePlayerConfig(raw?: PlayerConfig): PlayerConfig {
+  if (!raw || typeof raw !== 'object') return { mode: 'human' };
+  const safeMode = (raw.mode && MODE_LABEL[raw.mode]) ? raw.mode : 'human';
+  const next: PlayerConfig = { mode: safeMode };
+  if (raw.model) next.model = raw.model;
+  if (raw.apiKey) next.apiKey = raw.apiKey;
+  if (raw.baseUrl) next.baseUrl = raw.baseUrl;
+  if (raw.token) next.token = raw.token;
+  return next;
+}
+
+function buildPlayerIdentity(config: PlayerConfig, index: number): { id: string; label: string } {
+  const mode = config.mode ?? 'human';
+  if (mode.startsWith('ai:')) {
+    const model = (config.model ?? '').trim();
+    const base = (config.baseUrl ?? '').trim();
+    const label = `${MODE_LABEL[mode] ?? mode}${model ? `:${model}` : ''}`;
+    return { id: `${mode}|${model}|${base}`, label };
+  }
+  if (mode === 'http') {
+    const base = (config.baseUrl ?? '').trim();
+    const label = `${MODE_LABEL[mode] ?? mode}${base ? `:${base}` : ''}`;
+    return { id: `${mode}|${base}`, label };
+  }
+  if (mode.startsWith('builtin')) {
+    return { id: mode, label: MODE_LABEL[mode] ?? mode };
+  }
+  return { id: `human:${index}`, label: index === 0 ? '黑方（人类）' : '白方（人类）' };
+}
 
 type MoveOrigin = 'human' | 'ai' | 'resign';
 
@@ -75,6 +190,7 @@ interface MoveLogEntry {
   col: number | null;
   coordinate: string;
   origin: MoveOrigin;
+  note?: string;
 }
 
 const STAR_POINTS: Array<{ row: number; col: number }> = [
@@ -99,16 +215,77 @@ function formatDelta(delta: number): string {
   return delta > 0 ? `+${delta}` : `${delta}`;
 }
 
-function pickAiMove(state: GobangState, legal: GobangAction[]): GobangAction {
-  const { lastMove } = state.data;
+function formatTrueSkillStat(rating?: Rating) {
+  if (!rating) return 'μ — · σ —';
+  return `μ ${rating.mu.toFixed(2)} · σ ${rating.sigma.toFixed(2)}`;
+}
+
+function formatConfidence(rating?: Rating) {
+  if (!rating) return 'CR —';
+  const cr = rating.mu - 3 * rating.sigma;
+  return `CR ${cr.toFixed(2)}`;
+}
+
+function inBounds(row: number, col: number): boolean {
+  return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+}
+
+function countDirection(board: GobangState['data']['board'], row: number, col: number, dr: number, dc: number, player: 0 | 1): number {
+  let r = row + dr;
+  let c = col + dc;
+  let count = 0;
+
+  while (inBounds(r, c) && board[r][c] === player) {
+    count += 1;
+    r += dr;
+    c += dc;
+  }
+
+  return count;
+}
+
+function wouldCompleteFive(board: GobangState['data']['board'], row: number, col: number, player: 0 | 1): boolean {
+  const directions: Array<[number, number]> = [
+    [1, 0],
+    [0, 1],
+    [1, 1],
+    [1, -1],
+  ];
+
+  return directions.some(([dr, dc]) => {
+    const forward = countDirection(board, row, col, dr, dc, player);
+    const backward = countDirection(board, row, col, -dr, -dc, player);
+    return forward + backward + 1 >= WIN_LENGTH;
+  });
+}
+
+function pickBuiltinMove(state: GobangState, legal: GobangAction[]): { action: GobangAction; note?: string } {
   if (legal.length === 0) {
     throw new Error('No legal moves available.');
   }
 
+  const board = state.data.board;
+  const current = state.currentPlayer as 0 | 1;
+  const opponent = ((current + 1) % gobangEngine.maxPlayers) as 0 | 1;
+
+  // 1. Win immediately if possible.
+  const winningMove = legal.find((move) => wouldCompleteFive(board, move.row, move.col, current));
+  if (winningMove) {
+    return { action: winningMove, note: '形成连五，立即获胜。' };
+  }
+
+  // 2. Block opponent's immediate win threat.
+  const blockingMove = legal.find((move) => wouldCompleteFive(board, move.row, move.col, opponent));
+  if (blockingMove) {
+    return { action: blockingMove, note: '阻挡对手即将连成五子。' };
+  }
+
+  const { lastMove } = state.data;
   if (lastMove) {
     const nearby = legal.filter((move) => Math.abs(move.row - lastMove.row) <= 1 && Math.abs(move.col - lastMove.col) <= 1);
     if (nearby.length > 0) {
-      return nearby[Math.floor(Math.random() * nearby.length)];
+      const choice = nearby[Math.floor(Math.random() * nearby.length)];
+      return { action: choice, note: '沿着最新战线继续进攻。' };
     }
   }
 
@@ -124,7 +301,7 @@ function pickAiMove(state: GobangState, legal: GobangAction[]): GobangAction {
     }
   });
 
-  return best;
+  return { action: best, note: '靠近棋盘中心掌握主动。' };
 }
 
 function getMatchStatus(state: GobangState): string {
@@ -143,9 +320,61 @@ function getMatchStatus(state: GobangState): string {
 }
 
 export default function GobangRenderer() {
+  const initialPlayerConfigsRef = useRef<PlayerConfig[] | null>(null);
+  if (!initialPlayerConfigsRef.current) {
+    const stored = readPlayerConfigs<PlayerConfig>(
+      PLAYER_STORAGE_KEY,
+      () => [
+        { mode: 'human' },
+        { mode: 'builtin:random' },
+      ],
+      sanitizePlayerConfig,
+    );
+    initialPlayerConfigsRef.current = stored.length
+      ? stored
+      : [
+          { mode: 'human' },
+          { mode: 'builtin:random' },
+        ];
+  }
   const [state, setState] = useState<GobangState>(createPendingInitialState);
   const [moveLog, setMoveLog] = useState<MoveLogEntry[]>([]);
-  const [playerModes, setPlayerModes] = useState<PlayerMode[]>(['human', 'ai_random']);
+  const [playerConfigs, setPlayerConfigs] = useState<PlayerConfig[]>(
+    () => initialPlayerConfigsRef.current ?? [
+        { mode: 'human' },
+        { mode: 'builtin:random' },
+      ],
+  );
+  const [aiStatus, setAiStatus] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiTicketRef = useRef(0);
+  const tsStoreRef = useRef<TrueSkillStore>(readTrueSkillStore(TS_STORE_KEY, TS_SCHEMA));
+  const [tsRatings, setTsRatings] = useState<Rating[]>(() => {
+    const baseConfigs = initialPlayerConfigsRef.current ?? [
+      { mode: 'human' },
+      { mode: 'builtin:random' },
+    ];
+    const identities = baseConfigs.map((config, index) => ({ id: buildPlayerIdentity(config, index).id }));
+    return applyRatingsFromStore(tsStoreRef.current ?? createTrueSkillStore(TS_SCHEMA), identities);
+  });
+  const [latencyStore, setLatencyStore] = useState<LatencyStore>(() =>
+    readLatencyStore(LATENCY_KEY, LATENCY_SCHEMA),
+  );
+  const latencyStoreRef = useRef(latencyStore);
+  useEffect(() => { latencyStoreRef.current = latencyStore; }, [latencyStore]);
+  const matchStatsRef = useRef<MatchSummaryStore>(
+    readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA),
+  );
+  const [lastLatency, setLastLatency] = useState<Array<number | null>>([null, null]);
+  const lastRecordedTurnRef = useRef<number | null>(null);
+  const playerIdentities = useMemo(
+    () =>
+      [0, 1].map((index) => ({
+        ...buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index),
+        role: index === 0 ? 'black' : 'white',
+      })),
+    [playerConfigs],
+  );
 
   const legalMoves = useMemo(() => {
     if (state.status !== 'running') {
@@ -157,7 +386,68 @@ export default function GobangRenderer() {
   const { board, lastMove } = state.data;
   const hasStarted = state.status !== 'pending';
 
-  const applyAction = useCallback((action: GobangAction, origin: MoveOrigin) => {
+  useEffect(() => {
+    writePlayerConfigs(PLAYER_STORAGE_KEY, playerConfigs, sanitizePlayerConfig);
+  }, [playerConfigs]);
+
+  const ensureTsStore = useCallback(() => {
+    if (!tsStoreRef.current) {
+      tsStoreRef.current = createTrueSkillStore(TS_SCHEMA);
+    }
+    return tsStoreRef.current;
+  }, []);
+
+  useEffect(() => {
+    const store = ensureTsStore();
+    setTsRatings(applyRatingsFromStore(store, playerIdentities));
+  }, [ensureTsStore, playerIdentities]);
+
+  const handleApplyTsStore = useCallback(
+    (store: TrueSkillStore) => {
+      tsStoreRef.current = store;
+      setTsRatings(applyRatingsFromStore(store, playerIdentities));
+    },
+    [playerIdentities],
+  );
+
+  const handleTsStoreChange = useCallback((store: TrueSkillStore) => {
+    tsStoreRef.current = store;
+  }, []);
+
+  const recordMatchOutcome = useCallback((winner: 0 | 1 | null | undefined) => {
+    const store = ensureMatchSummaryStore(matchStatsRef.current, MATCH_STATS_SCHEMA);
+    const winnerKey = typeof winner === 'number' ? (winner === 0 ? 'black' : 'white') : null;
+    const updated = incrementMatchSummary(store, winnerKey);
+    matchStatsRef.current = writeMatchSummaryStore(MATCH_STATS_KEY, updated);
+  }, []);
+
+  useEffect(() => {
+    if (state.status !== 'finished') return;
+    if (lastRecordedTurnRef.current === state.turn) return;
+    lastRecordedTurnRef.current = state.turn;
+    const winner = state.data.winner as 0 | 1 | null;
+    recordMatchOutcome(winner);
+    if (winner == null) {
+      return;
+    }
+    const loser = (winner === 0 ? 1 : 0) as 0 | 1;
+    const updated = tsRatings.map((rating) => ({ ...rating }));
+    tsUpdateTwoTeams(updated, [winner], [loser]);
+    setTsRatings(updated);
+    const store = ensureTsStore();
+    const identities = [0, 1].map((index) => buildPlayerIdentity(playerConfigs[index] ?? { mode: 'human' }, index));
+    identities.forEach((identity, index) => {
+      const role = index === 0 ? 'black' : 'white';
+      const entry = store.players[identity.id] || { id: identity.id, roles: {} };
+      entry.overall = { ...updated[index] };
+      entry.roles = { ...(entry.roles || {}), [role]: { ...updated[index] } };
+      entry.label = identity.label;
+      store.players[identity.id] = entry;
+    });
+    tsStoreRef.current = writeTrueSkillStore(TS_STORE_KEY, store);
+  }, [ensureTsStore, playerConfigs, recordMatchOutcome, state.data.winner, state.status, state.turn, tsRatings]);
+
+  const applyAction = useCallback((action: GobangAction, origin: MoveOrigin, note?: string) => {
     setState((previous) => {
       if (previous.status !== 'running') {
         return previous;
@@ -175,6 +465,7 @@ export default function GobangRenderer() {
           col: action.col,
           coordinate: formatCoordinate(action.row, action.col),
           origin,
+          note,
         },
       ]);
 
@@ -188,21 +479,30 @@ export default function GobangRenderer() {
       if (board[row][col] !== null) return;
 
       const current = state.currentPlayer as 0 | 1;
-      if (playerModes[current] !== 'human') return;
+      const mode = playerConfigs[current]?.mode ?? 'human';
+      if (mode !== 'human') return;
 
       applyAction({ row, col }, 'human');
     },
-    [applyAction, board, playerModes, state]
+    [applyAction, board, playerConfigs, state]
   );
 
   const handleStart = useCallback(() => {
     setState(gobangEngine.initialState());
     setMoveLog([]);
+    setAiStatus(null);
+    setAiError(null);
+    lastRecordedTurnRef.current = null;
+    setLastLatency([null, null]);
   }, []);
 
   const handleReset = useCallback(() => {
     setState(gobangEngine.initialState());
     setMoveLog([]);
+    setAiStatus(null);
+    setAiError(null);
+    lastRecordedTurnRef.current = null;
+    setLastLatency([null, null]);
   }, []);
 
   const handleResign = useCallback(() => {
@@ -231,25 +531,320 @@ export default function GobangRenderer() {
         origin: 'resign',
       },
     ]);
+    setAiStatus(null);
   }, [state]);
 
+  const recordLatency = useCallback(
+    (playerIndex: 0 | 1, durationMs: number) => {
+      if (!Number.isFinite(durationMs) || durationMs < 0) return;
+      const identity = buildPlayerIdentity(playerConfigs[playerIndex] ?? { mode: 'human' }, playerIndex);
+      const baseStore = ensureLatencyStore(
+        latencyStoreRef.current || { schema: LATENCY_SCHEMA, players: {} },
+        LATENCY_SCHEMA,
+      );
+      const nextPlayers = { ...(baseStore.players || {}) };
+      nextPlayers[identity.id] = updateLatencyStats(nextPlayers[identity.id], durationMs, identity.label);
+      const nextStore: LatencyStore = {
+        schema: LATENCY_SCHEMA,
+        updatedAt: new Date().toISOString(),
+        players: nextPlayers,
+      };
+      const persisted = writeLatencyStore(LATENCY_KEY, nextStore);
+      latencyStoreRef.current = persisted;
+      setLatencyStore(persisted);
+      setLastLatency((prev) => {
+        const arr = Array.isArray(prev) ? [...prev] : [null, null];
+        arr[playerIndex] = durationMs;
+        return arr;
+      });
+    },
+    [playerConfigs],
+  );
+
+
+  const updatePlayerConfig = useCallback((index: 0 | 1, update: Partial<PlayerConfig>) => {
+    setPlayerConfigs((previous) => {
+      const next = [...previous] as PlayerConfig[];
+      const current = sanitizePlayerConfig(next[index]);
+      next[index] = sanitizePlayerConfig({ ...current, ...update });
+      return next;
+    });
+  }, []);
+
+  const requestExternalMove = useCallback(
+    async (
+      mode: PlayerMode,
+      config: PlayerConfig,
+      observation: string,
+      legalMovesInput: GobangAction[],
+      playerIndex: 0 | 1
+    ): Promise<{ action: GobangAction; note?: string }> => {
+      const legalMoves = legalMovesInput.map((move) => ({ row: move.row, col: move.col }));
+      const model = (config.model || '').trim();
+      if (!model) {
+        throw new Error('请先为外置 AI 填写模型名称。');
+      }
+      const response = await fetch('/api/gobang/move', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: mode,
+          apiKey: config.apiKey,
+          model,
+          baseUrl: config.baseUrl,
+          token: config.token,
+          observation,
+          legalMoves,
+          player: playerIndex,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || '外置 AI 请求失败');
+      }
+
+      const data: { move?: GobangAction; reason?: string; provider?: string } = await response.json();
+      if (!data.move) {
+        throw new Error('外置 AI 未返回有效落点');
+      }
+
+      const note = data.reason
+        ? data.provider
+          ? `${data.provider}：${data.reason}`
+          : data.reason
+        : data.provider;
+
+      return { action: data.move, note: note || undefined };
+    },
+    []
+  );
+
+  const requiresApiKey = useCallback((mode: PlayerMode) => mode.startsWith('ai:'), []);
+
   useEffect(() => {
-    if (state.status !== 'running') return;
+    if (state.status !== 'running') {
+      setAiStatus(null);
+      setAiError(null);
+      return;
+    }
 
     const currentPlayer = state.currentPlayer as 0 | 1;
-    const mode = playerModes[currentPlayer];
-    if (mode === 'human') return;
+    const config = playerConfigs[currentPlayer] ?? { mode: 'human' };
+    const mode = config.mode;
+    if (mode === 'human') {
+      setAiStatus(null);
+      return;
+    }
 
     const legal = gobangEngine.legalActions(state);
-    if (legal.length === 0) return;
+    if (legal.length === 0) {
+      setAiStatus(null);
+      return;
+    }
+
+    const ticket = aiTicketRef.current + 1;
+    aiTicketRef.current = ticket;
+
+    const runAi = async () => {
+      const modeLabel = MODE_LABEL[mode] ?? 'AI';
+      setAiStatus(`${PLAYERS[currentPlayer].name}（${modeLabel}）正在思考…`);
+      setAiError(null);
+      const startMark = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+      try {
+        if (mode === 'builtin:random') {
+          const result = pickBuiltinMove(state, legal);
+          if (aiTicketRef.current !== ticket) return;
+          setAiStatus(null);
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+          recordLatency(currentPlayer, elapsed);
+          applyAction(result.action, 'ai', result.note);
+          return;
+        }
+
+        if (requiresApiKey(mode) && !config.apiKey) {
+          const fallback = pickBuiltinMove(state, legal);
+          if (aiTicketRef.current !== ticket) return;
+          setAiStatus(null);
+          setAiError(`${PLAYERS[currentPlayer].name} (${modeLabel}) 未配置 API Key，已使用内置随机 AI。`);
+          const combinedNote = ['未配置 API Key，改用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+          const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+          recordLatency(currentPlayer, elapsed);
+          applyAction(fallback.action, 'ai', combinedNote || undefined);
+          return;
+        }
+
+        const observation = gobangEngine.encodeState(state, currentPlayer);
+        const result = await requestExternalMove(mode, config, observation, legal, currentPlayer);
+        if (aiTicketRef.current !== ticket) return;
+        setAiStatus(null);
+        const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+        recordLatency(currentPlayer, elapsed);
+        applyAction(result.action, 'ai', result.note);
+      } catch (error) {
+        if (aiTicketRef.current !== ticket) return;
+        console.error(error);
+        const fallback = pickBuiltinMove(state, legal);
+        setAiStatus(null);
+        const message = error instanceof Error ? error.message : String(error);
+        setAiError(message || '外置 AI 调用失败，已回退到内置随机 AI。');
+        const combinedNote = ['外置 AI 调用失败，已使用内置随机 AI。', fallback.note].filter(Boolean).join(' ');
+        const elapsed = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - startMark;
+        recordLatency(currentPlayer, elapsed);
+        applyAction(fallback.action, 'ai', combinedNote || undefined);
+      }
+    };
 
     const timer = window.setTimeout(() => {
-      const action = pickAiMove(state, legal);
-      applyAction(action, 'ai');
-    }, 400);
+      void runAi();
+    }, 300);
 
-    return () => window.clearTimeout(timer);
-  }, [applyAction, playerModes, state]);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [applyAction, playerConfigs, recordLatency, requestExternalMove, requiresApiKey, state]);
+
+  const renderExternalConfig = useCallback(
+    (index: 0 | 1) => {
+      const config = playerConfigs[index] ?? { mode: 'human' };
+      switch (config.mode) {
+        case 'ai:openai':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                OpenAI API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（必填）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="请输入模型名称"
+                />
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
+              </label>
+            </div>
+          );
+        case 'ai:deepseek':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                DeepSeek API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（必填）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="请输入模型名称"
+                />
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
+              </label>
+              <label className={styles.configLabel}>
+                API 基础地址（可选）
+                <input
+                  type="text"
+                  value={config.baseUrl ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { baseUrl: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="https://api.deepseek.com/v1beta"
+                />
+                <span className={styles.configHelp}>402 余额不足时，可尝试改用 v1beta 路径，如 https://api.deepseek.com/v1beta。</span>
+              </label>
+            </div>
+          );
+        case 'ai:kimi':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                Kimi API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（必填）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="请输入模型名称"
+                />
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
+              </label>
+              <label className={styles.configLabel}>
+                API 基础地址（可选）
+                <input
+                  type="text"
+                  value={config.baseUrl ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { baseUrl: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="https://api.moonshot.cn"
+                />
+                <span className={styles.configHelp}>如使用代理，可在此处覆盖默认地址。</span>
+              </label>
+            </div>
+          );
+        case 'ai:qwen':
+          return (
+            <div className={styles.configGroup}>
+              <label className={styles.configLabel}>
+                Qwen API Key
+                <input
+                  type="password"
+                  value={config.apiKey ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { apiKey: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="sk-..."
+                  autoComplete="off"
+                />
+              </label>
+              <label className={styles.configLabel}>
+                模型（必填）
+                <input
+                  type="text"
+                  value={config.model ?? ''}
+                  onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
+                  className={styles.configInput}
+                  placeholder="请输入模型名称"
+                />
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
+              </label>
+            </div>
+          );
+        default:
+          return null;
+      }
+    },
+    [playerConfigs, updatePlayerConfig]
+  );
 
   return (
     <div className={styles.root}>
@@ -264,29 +859,11 @@ export default function GobangRenderer() {
                   <span>{PLAYERS[0].flag}</span>
                 </div>
                 <div className={styles.playerStats}>
-                  <span>TrueSkill {PLAYERS[0].rating}</span>
-                  <span style={{ color: PLAYERS[0].delta >= 0 ? '#34d399' : '#fb7185' }}>{formatDelta(PLAYERS[0].delta)}</span>
+                  <span>{formatTrueSkillStat(tsRatings[0])}</span>
+                  <span className={styles.confidence}>{formatConfidence(tsRatings[0])}</span>
                   <span className={styles.badge}>先手</span>
                 </div>
-                <select
-                  aria-label="Player 1 mode"
-                  value={playerModes[0]}
-                  onChange={(event) => {
-                    const mode = event.target.value as PlayerMode;
-                    setPlayerModes((previous) => {
-                      const next = [...previous] as PlayerMode[];
-                      next[0] = mode;
-                      return next;
-                    });
-                  }}
-                  className={styles.modeSelect}
-                >
-                  {MODE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.modeBadge}>{MODE_LABEL[playerConfigs[0]?.mode ?? 'human']}</div>
               </div>
             </div>
 
@@ -298,29 +875,11 @@ export default function GobangRenderer() {
                   <span>{PLAYERS[1].flag}</span>
                 </div>
                 <div className={styles.playerStats}>
-                  <span>TrueSkill {PLAYERS[1].rating}</span>
-                  <span style={{ color: PLAYERS[1].delta >= 0 ? '#34d399' : '#fb7185' }}>{formatDelta(PLAYERS[1].delta)}</span>
+                  <span>{formatTrueSkillStat(tsRatings[1])}</span>
+                  <span className={styles.confidence}>{formatConfidence(tsRatings[1])}</span>
                   <span className={styles.badge}>后手</span>
                 </div>
-                <select
-                  aria-label="Player 2 mode"
-                  value={playerModes[1]}
-                  onChange={(event) => {
-                    const mode = event.target.value as PlayerMode;
-                    setPlayerModes((previous) => {
-                      const next = [...previous] as PlayerMode[];
-                      next[1] = mode;
-                      return next;
-                    });
-                  }}
-                  className={styles.modeSelect}
-                >
-                  {MODE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                <div className={styles.modeBadge}>{MODE_LABEL[playerConfigs[1]?.mode ?? 'human']}</div>
               </div>
             </div>
           </div>
@@ -332,6 +891,32 @@ export default function GobangRenderer() {
           </div>
         </div>
       </section>
+
+      <div className={styles.configSection}>
+        <PlayerConfigPanel
+          title="参赛选手配置"
+          description="为每位选手选择人类、内置算法或外置 AI，并填写对应的 API/模型。"
+          players={PLAYERS.map((player, index) => ({
+            title: (
+              <span>
+                {player.name} <span style={{ opacity: 0.7 }}>({index === 0 ? '黑子' : '白子'})</span>
+              </span>
+            ),
+            badge: index === 0 ? '先手' : '后手',
+          }))}
+          configs={playerConfigs}
+          optionGroups={MODE_GROUPS}
+          getMode={(config) => config?.mode}
+          onModeChange={(index, mode) => updatePlayerConfig(index as 0 | 1, { mode: mode as PlayerMode })}
+          renderMeta={(index) => (
+            <>
+              <div>TrueSkill：{formatTrueSkillStat(tsRatings[index])}</div>
+              <div>CR：{formatConfidence(tsRatings[index])}</div>
+            </>
+          )}
+          renderFields={(index) => renderExternalConfig(index as 0 | 1)}
+        />
+      </div>
 
       <div className={styles.main}>
         <div className={styles.boardColumn}>
@@ -373,7 +958,8 @@ export default function GobangRenderer() {
                     {board.map((row, rowIndex) =>
                       row.map((cell, colIndex) => {
                         const isLastMove = !!lastMove && lastMove.row === rowIndex && lastMove.col === colIndex;
-                        const isHumanTurn = state.status === 'running' && playerModes[state.currentPlayer as 0 | 1] === 'human';
+                        const isHumanTurn =
+                          state.status === 'running' && (playerConfigs[state.currentPlayer as 0 | 1]?.mode ?? 'human') === 'human';
                         const disabled = !isHumanTurn;
                         const left = ((colIndex + 0.5) / BOARD_SIZE) * 100;
                         const top = ((rowIndex + 0.5) / BOARD_SIZE) * 100;
@@ -464,6 +1050,10 @@ export default function GobangRenderer() {
                 </button>
               )}
             </div>
+            <div className={styles.controlMessages}>
+              {aiStatus ? <div className={styles.statusBanner}>{aiStatus}</div> : null}
+              {aiError ? <div className={styles.errorBanner}>{aiError}</div> : null}
+            </div>
           </div>
         </div>
 
@@ -485,7 +1075,14 @@ export default function GobangRenderer() {
               </div>
               <div className={styles.infoRow}>
                 <dt className={styles.infoLabel}>AI 模式</dt>
-                <dd>{playerModes.map((mode, index) => `${PLAYERS[index].name}: ${MODE_LABEL[mode]}`).join(' | ')}</dd>
+                <dd>
+                  {playerConfigs
+                    .map((config, index) => {
+                      const mode = config?.mode ?? 'human';
+                      return `${PLAYERS[index].name}: ${MODE_LABEL[mode] ?? mode}`;
+                    })
+                    .join(' | ')}
+                </dd>
               </div>
             </dl>
           </div>
@@ -504,19 +1101,49 @@ export default function GobangRenderer() {
 
                   return (
                     <li key={`${entry.turn}-${index}`} className={styles.logItem}>
-                      <div className={styles.controlStat}>
-                        <span className={`${styles.logItemBadge} ${badgeClass}`}>{player.name}</span>
-                        <span className={styles.badge}>T{String(entry.turn).padStart(2, '0')}</span>
+                      <div className={styles.logItemHeader}>
+                        <div className={styles.controlStat}>
+                          <span className={`${styles.logItemBadge} ${badgeClass}`}>{player.name}</span>
+                          <span className={styles.badge}>T{String(entry.turn).padStart(2, '0')}</span>
+                        </div>
+                        <div className={styles.logMeta}>
+                          <span className={styles.logCoordinate}>{label}</span>
+                          <span className={styles.logOrigin}>{originLabel}</span>
+                        </div>
                       </div>
-                      <div className={styles.logMeta}>
-                        <span className={styles.logCoordinate}>{label}</span>
-                        <span className={styles.logOrigin}>{originLabel}</span>
-                      </div>
+                      {entry.note ? <div className={styles.logReason}>{entry.note}</div> : null}
                     </li>
                   );
                 })}
               </ol>
             )}
+          </div>
+
+          <div className={styles.metricsStack}>
+            <TrueSkillArchivePanel
+              storeKey={TS_STORE_KEY}
+              schema={TS_SCHEMA}
+              exportName="gobang_trueskill"
+              players={playerIdentities.map((identity, index) => ({
+                id: identity.id,
+                label: `${PLAYERS[index].name}（${index === 0 ? '黑方' : '白方'}）`,
+                role: identity.role,
+              }))}
+              onApply={handleApplyTsStore}
+              onStoreChange={handleTsStoreChange}
+            />
+            <LatencySummaryPanel
+              store={latencyStore}
+              lastMs={lastLatency}
+              identities={playerIdentities.map((identity) => identity.id)}
+              defaultCatalog={playerIdentities.map((identity) => identity.id)}
+              labelForIdentity={(id) =>
+                playerIdentities.find((item) => item.id === id)?.label || id
+              }
+              lang="zh"
+              title="思考耗时"
+              subtitle="展示累计均值与最近一次外置/内置 AI 耗时"
+            />
           </div>
         </aside>
       </div>

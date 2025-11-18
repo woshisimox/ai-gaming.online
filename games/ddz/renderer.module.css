@@ -1,0 +1,147 @@
+.pillButton {
+  position: relative;
+  border: none;
+  border-radius: 999px;
+  padding: 0.55rem 1.35rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Heiti SC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    'Noto Sans CJK SC', sans-serif;
+  cursor: pointer;
+  background: transparent;
+  color: #475569;
+  transition: color 0.2s ease, opacity 0.2s ease, transform 0.2s ease;
+  z-index: 0;
+}
+
+.pillButton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.05));
+  opacity: 0.15;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  transition: opacity 0.2s ease, box-shadow 0.2s ease;
+  z-index: -1;
+}
+
+.pillButton:hover {
+  color: #0f172a;
+}
+
+.pillButton:hover::after {
+  opacity: 0.35;
+}
+
+.pillButton:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
+}
+
+.pillButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.pillButton:disabled::after {
+  opacity: 0.2;
+  box-shadow: none;
+}
+
+.variantToggleInactive {
+  color: #475569;
+}
+
+.pillButton.variantToggleInactive::after {
+  opacity: 0.05;
+  background: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.variantToggleActive,
+.variantPrimary {
+  color: #fff;
+}
+
+.pillButton.variantToggleActive::after,
+.pillButton.variantPrimary::after {
+  opacity: 1;
+  background: linear-gradient(120deg, #050a1a, #1d4ed8 70%, #60a5fa);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.35);
+}
+
+.variantGhost {
+  color: #0f172a;
+}
+
+.pillButton.variantGhost::after {
+  opacity: 0.4;
+  background: linear-gradient(120deg, rgba(148, 163, 184, 0.45), rgba(226, 232, 240, 0.65));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+
+.variantAmber {
+  color: #1c1917;
+}
+
+.pillButton.variantAmber::after {
+  opacity: 1;
+  background: linear-gradient(120deg, #7c2d12, #ea580c 60%, #fdba74);
+  box-shadow: 0 12px 26px rgba(120, 53, 15, 0.35);
+}
+
+.variantDanger {
+  color: #fff;
+}
+
+.pillButton.variantDanger::after {
+  opacity: 1;
+  background: linear-gradient(120deg, #7f1d1d, #dc2626 60%, #fca5a5);
+  box-shadow: 0 12px 26px rgba(127, 29, 29, 0.35);
+}
+
+.small {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+}
+
+.tiny {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+.cardBase {
+  background-image: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(226, 232, 240, 0.72));
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+  position: relative;
+  isolation: isolate;
+}
+
+.cardInteractive:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.25);
+}
+
+.cardInteractive:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.22);
+}
+
+.cardInteractive:disabled {
+  cursor: not-allowed;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.1);
+}
+
+.cardSelected {
+  box-shadow: 0 14px 32px rgba(37, 99, 235, 0.35), 0 0 0 1px rgba(37, 99, 235, 0.35);
+}
+
+.cardHidden {
+  background-image: linear-gradient(145deg, rgba(15, 23, 42, 0.92), rgba(30, 41, 59, 0.7));
+}
