@@ -311,3 +311,100 @@
 .hiddenFileInput {
   display: none;
 }
+
+.dropdownStack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.dropdownSection {
+  border-radius: 20px;
+  padding: 18px 20px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.98), rgba(226, 232, 240, 0.9));
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.18);
+}
+
+.dropdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.dropdownToggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.dropdownToggle:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  border-radius: 999px;
+  outline-offset: 2px;
+}
+
+.dropdownTitle {
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Heiti SC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    'Noto Sans CJK SC', sans-serif;
+}
+
+.dropdownChevron {
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid rgba(15, 23, 42, 0.65);
+  border-bottom: 2px solid rgba(15, 23, 42, 0.65);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+
+.dropdownChevronOpen {
+  transform: rotate(225deg);
+}
+
+.dropdownActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dropdownBody {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: max-height 0.3s ease, opacity 0.25s ease, transform 0.25s ease;
+}
+
+.dropdownBodyOpen {
+  max-height: 2400px;
+  opacity: 1;
+  transform: translateY(0);
+  margin-top: 16px;
+}
+
+.dropdownToggleOpen {
+  color: #1d4ed8;
+}
+
+@media (max-width: 640px) {
+  .dropdownHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dropdownActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

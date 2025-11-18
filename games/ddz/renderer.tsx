@@ -7368,6 +7368,18 @@ function DdzRenderer() {
     [seats, seatModels, seatKeys],
   );
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
+  const dropdownKeys = ['core', 'ai', 'interval', 'timeout'] as const;
+  type DropdownKey = typeof dropdownKeys[number];
+  const [dropdownState, setDropdownState] = useState<Record<DropdownKey, boolean>>({
+    core: true,
+    ai: true,
+    interval: false,
+    timeout: false,
+  });
+
+  const toggleDropdown = useCallback((key: DropdownKey) => {
+    setDropdownState((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   const computeTotalMatches = useCallback(() => {
     const players = readDdzLadderPlayers();
@@ -7538,152 +7550,204 @@ function DdzRenderer() {
           {isRegularMode ? (
         <>
         <section className={styles.settingsCard}>
-          <div className={styles.settingsHeader}>
-            <div className={styles.settingsTitle}>对局设置</div>
-            <div className={styles.settingsActions}>
-              <label className={styles.toggleLabel}>
-                <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
-                启用对局
-              </label>
-              <button
-                type="button"
-                onClick={doResetAll}
-                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
-              >
-                清空
-              </button>
-            </div>
-          </div>
-          <div className={styles.settingsGrid}>
-            <label className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>局数</span>
-              <input
-                className={styles.fieldInput}
-                type="number"
-                min={1}
-                step={1}
-                value={rounds}
-                onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
-              />
-            </label>
-            <label className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>初始分</span>
-              <input
-                className={styles.fieldInput}
-                type="number"
-                step={10}
-                value={startScore}
-                onChange={e=>setStartScore(Number(e.target.value)||0)}
-              />
-            </label>
-            <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
-              <div className={styles.fieldLabel}>规则</div>
-              <div className={styles.checkboxStack}>
-                <label className={styles.checkboxLabel}>
-                  <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
-                  可抢地主
-                </label>
-                <label className={styles.checkboxLabel}>
-                  <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
-                  农民配合
-                </label>
-              </div>
-            </div>
-            <label className={styles.fieldGroup}>
-              <span className={styles.fieldLabel}>4带2 规则</span>
-              <select
-                className={styles.fieldInput}
-                value={four2}
-                onChange={e=>setFour2(e.target.value as Four2Policy)}
-              >
-                <option value="both">都可</option>
-                <option value="2singles">两张单牌</option>
-                <option value="2pairs">两对</option>
-              </select>
-            </label>
-            <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
-              <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
-              <div className={styles.fieldActions}>
-                <div>
-                  <input
-                    ref={allFileRef}
-                    type="file"
-                    accept="application/json"
-                    className={styles.hiddenFileInput}
-                    onChange={handleAllFileUpload}
-                  />
-                  <button
-                    type="button"
-                    onClick={()=>allFileRef.current?.click()}
-                    className={cx(styles.pillButton, styles.variantGhost, styles.small)}
-                  >上传</button>
-                </div>
+          <div className={styles.dropdownStack}>
+            <div className={styles.dropdownSection}>
+              <div className={styles.dropdownHeader}>
                 <button
                   type="button"
-                  onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
-                  className={cx(styles.pillButton, styles.variantGhost, styles.small)}
-                >存档</button>
+                  className={cx(styles.dropdownToggle, dropdownState.core && styles.dropdownToggleOpen)}
+                  aria-expanded={dropdownState.core}
+                  onClick={() => toggleDropdown('core')}
+                >
+                  <span className={styles.dropdownTitle}>对局设置</span>
+                  <span className={cx(styles.dropdownChevron, dropdownState.core && styles.dropdownChevronOpen)} />
+                </button>
+                <div className={styles.dropdownActions}>
+                  <label className={styles.toggleLabel}>
+                    <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
+                    启用对局
+                  </label>
+                  <button
+                    type="button"
+                    onClick={doResetAll}
+                    className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                  >
+                    清空
+                  </button>
+                </div>
               </div>
-            </div>
-          </div>
-        </section>
-
-        <section className={styles.settingsCard} style={{ marginTop: 16 }}>
-          <PlayerConfigPanel
-            title="每家 AI 设置（独立）"
-            players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
-            configs={seatPanelConfigs}
-            optionGroups={seatOptionGroups}
-            getMode={(config) => config?.mode}
-            onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
-            renderMeta={(index) => (
-              <div style={{ fontSize:12, color:'#4b5563' }}>
-                当前：{choiceLabel(seats[index])}
-              </div>
-            )}
-            renderFields={(index) => renderSeatFields(index)}
-          />
-
-          <div className={styles.subSection}>
-            <div className={styles.subSectionHeader}>每家出牌最小间隔 (ms)</div>
-            <div className={styles.seatGrid}>
-              {[0,1,2].map(i=>(
-                <div key={i} className={styles.seatCard}>
-                  <div className={styles.seatTitle}>{seatName(i)}</div>
-                  <label className={styles.subFieldLabel}>
-                    <span>最小间隔 (ms)</span>
+              <div className={cx(styles.dropdownBody, dropdownState.core && styles.dropdownBodyOpen)}>
+                <div className={styles.settingsGrid}>
+                  <label className={styles.fieldGroup}>
+                    <span className={styles.fieldLabel}>局数</span>
                     <input
                       className={styles.fieldInput}
-                      type="number" min={0} step={100}
-                      value={ (seatDelayMs[i] ?? 0) }
-                      onChange={e=>setSeatDelay(i, e.target.value)}
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={rounds}
+                      onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
                     />
                   </label>
-                </div>
-
-              ))}
-            </div>
-          </div>
-          <div className={styles.subSection}>
-            <div className={styles.subSectionHeader}>每家思考超时（秒）</div>
-            <div className={styles.seatGrid}>
-              {[0,1,2].map(i=>(
-                <div key={i} className={styles.seatCard}>
-                  <div className={styles.seatTitle}>{seatName(i)}</div>
-                  <label className={styles.subFieldLabel}>
-                    <span>弃牌时间（秒）</span>
+                  <label className={styles.fieldGroup}>
+                    <span className={styles.fieldLabel}>初始分</span>
                     <input
                       className={styles.fieldInput}
-                      type="number" min={5} step={1}
-                      value={ (turnTimeoutSecs[i] ?? 30) }
-                      onChange={e=>{
-                        const v = Math.max(5, Math.floor(Number(e.target.value)||0));
-                        setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
-                      }}
+                      type="number"
+                      step={10}
+                      value={startScore}
+                      onChange={e=>setStartScore(Number(e.target.value)||0)}
                     />
                   </label>
+                  <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                    <div className={styles.fieldLabel}>规则</div>
+                    <div className={styles.checkboxStack}>
+                      <label className={styles.checkboxLabel}>
+                        <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
+                        可抢地主
+                      </label>
+                      <label className={styles.checkboxLabel}>
+                        <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
+                        农民配合
+                      </label>
+                    </div>
+                  </div>
+                  <label className={styles.fieldGroup}>
+                    <span className={styles.fieldLabel}>4带2 规则</span>
+                    <select
+                      className={styles.fieldInput}
+                      value={four2}
+                      onChange={e=>setFour2(e.target.value as Four2Policy)}
+                    >
+                      <option value="both">都可</option>
+                      <option value="2singles">两张单牌</option>
+                      <option value="2pairs">两对</option>
+                    </select>
+                  </label>
+                  <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                    <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
+                    <div className={styles.fieldActions}>
+                      <div>
+                        <input
+                          ref={allFileRef}
+                          type="file"
+                          accept="application/json"
+                          className={styles.hiddenFileInput}
+                          onChange={handleAllFileUpload}
+                        />
+                        <button
+                          type="button"
+                          onClick={()=>allFileRef.current?.click()}
+                          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                        >上传</button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
+                        className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                      >存档</button>
+                    </div>
+                  </div>
                 </div>
-              ))}
+              </div>
+            </div>
+
+            <div className={styles.dropdownSection}>
+              <div className={styles.dropdownHeader}>
+                <button
+                  type="button"
+                  className={cx(styles.dropdownToggle, dropdownState.ai && styles.dropdownToggleOpen)}
+                  aria-expanded={dropdownState.ai}
+                  onClick={() => toggleDropdown('ai')}
+                >
+                  <span className={styles.dropdownTitle}>每家 AI 设置（独立）</span>
+                  <span className={cx(styles.dropdownChevron, dropdownState.ai && styles.dropdownChevronOpen)} />
+                </button>
+              </div>
+              <div className={cx(styles.dropdownBody, dropdownState.ai && styles.dropdownBodyOpen)}>
+                <PlayerConfigPanel
+                  title=""
+                  players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
+                  configs={seatPanelConfigs}
+                  optionGroups={seatOptionGroups}
+                  getMode={(config) => config?.mode}
+                  onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
+                  renderMeta={(index) => (
+                    <div style={{ fontSize:12, color:'#4b5563' }}>
+                      当前：{choiceLabel(seats[index])}
+                    </div>
+                  )}
+                  renderFields={(index) => renderSeatFields(index)}
+                />
+              </div>
+            </div>
+
+            <div className={styles.dropdownSection}>
+              <div className={styles.dropdownHeader}>
+                <button
+                  type="button"
+                  className={cx(styles.dropdownToggle, dropdownState.interval && styles.dropdownToggleOpen)}
+                  aria-expanded={dropdownState.interval}
+                  onClick={() => toggleDropdown('interval')}
+                >
+                  <span className={styles.dropdownTitle}>每家出牌最小间隔 (ms)</span>
+                  <span className={cx(styles.dropdownChevron, dropdownState.interval && styles.dropdownChevronOpen)} />
+                </button>
+              </div>
+              <div className={cx(styles.dropdownBody, dropdownState.interval && styles.dropdownBodyOpen)}>
+                <div className={styles.seatGrid}>
+                  {[0,1,2].map(i=>(
+                    <div key={i} className={styles.seatCard}>
+                      <div className={styles.seatTitle}>{seatName(i)}</div>
+                      <label className={styles.subFieldLabel}>
+                        <span>最小间隔 (ms)</span>
+                        <input
+                          className={styles.fieldInput}
+                          type="number" min={0} step={100}
+                          value={ (seatDelayMs[i] ?? 0) }
+                          onChange={e=>setSeatDelay(i, e.target.value)}
+                        />
+                      </label>
+                    </div>
+
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className={styles.dropdownSection}>
+              <div className={styles.dropdownHeader}>
+                <button
+                  type="button"
+                  className={cx(styles.dropdownToggle, dropdownState.timeout && styles.dropdownToggleOpen)}
+                  aria-expanded={dropdownState.timeout}
+                  onClick={() => toggleDropdown('timeout')}
+                >
+                  <span className={styles.dropdownTitle}>每家思考超时（秒）</span>
+                  <span className={cx(styles.dropdownChevron, dropdownState.timeout && styles.dropdownChevronOpen)} />
+                </button>
+              </div>
+              <div className={cx(styles.dropdownBody, dropdownState.timeout && styles.dropdownBodyOpen)}>
+                <div className={styles.seatGrid}>
+                  {[0,1,2].map(i=>(
+                    <div key={i} className={styles.seatCard}>
+                      <div className={styles.seatTitle}>{seatName(i)}</div>
+                      <label className={styles.subFieldLabel}>
+                        <span>弃牌时间（秒）</span>
+                        <input
+                          className={styles.fieldInput}
+                          type="number" min={5} step={1}
+                          value={ (turnTimeoutSecs[i] ?? 30) }
+                          onChange={e=>{
+                            const v = Math.max(5, Math.floor(Number(e.target.value)||0));
+                            setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </section>
