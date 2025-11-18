@@ -354,6 +354,8 @@ if (typeof document !== 'undefined' && !document.body.hasAttribute('data-i18n-cl
 
 
 type Four2Policy = 'both' | '2singles' | '2pairs';
+type SplitStrategy = 'balanced' | 'aggressive' | 'defensive';
+type CoopMetric = 'sync' | 'tempo' | 'support';
 type BotChoice =
   | 'built-in:greedy-max'
   | 'built-in:greedy-min'
@@ -7139,6 +7141,19 @@ const DEFAULTS = {
   startScore: 100,
   four2: 'both' as Four2Policy,
   farmerCoop: true,
+  landlordMultiplier: 1,
+  farmerMultiplier: 1,
+  bidLimit: 3,
+  doubleFactor: 1,
+  splitStrategy: 'balanced' as SplitStrategy,
+  autoStartDelay: 0,
+  farmerCoopWeight: 0.5,
+  playScoreWeight: 0.5,
+  trueSkillWeight: 1,
+  logSampleInterval: 5,
+  coopMetric: 'sync' as CoopMetric,
+  logRetention: 200,
+  resetInterval: 30,
   seatDelayMs: [1000,1000,1000] as number[],
   seats: ['built-in:greedy-max','built-in:greedy-min','built-in:random-legal'] as BotChoice[],
   // 模型初始为空，由用户手动填写
@@ -7203,6 +7218,19 @@ function DdzRenderer() {
   const [bid, setBid] = useState<boolean>(DEFAULTS.bid);
   const [four2, setFour2] = useState<Four2Policy>(DEFAULTS.four2);
   const [farmerCoop, setFarmerCoop] = useState<boolean>(DEFAULTS.farmerCoop);
+  const [landlordMultiplier, setLandlordMultiplier] = useState<number>(DEFAULTS.landlordMultiplier);
+  const [farmerMultiplier, setFarmerMultiplier] = useState<number>(DEFAULTS.farmerMultiplier);
+  const [bidLimit, setBidLimit] = useState<number>(DEFAULTS.bidLimit);
+  const [doubleFactor, setDoubleFactor] = useState<number>(DEFAULTS.doubleFactor);
+  const [splitStrategy, setSplitStrategy] = useState<SplitStrategy>(DEFAULTS.splitStrategy);
+  const [autoStartDelay, setAutoStartDelay] = useState<number>(DEFAULTS.autoStartDelay);
+  const [farmerCoopWeight, setFarmerCoopWeight] = useState<number>(DEFAULTS.farmerCoopWeight);
+  const [playScoreWeight, setPlayScoreWeight] = useState<number>(DEFAULTS.playScoreWeight);
+  const [trueSkillWeight, setTrueSkillWeight] = useState<number>(DEFAULTS.trueSkillWeight);
+  const [logSampleInterval, setLogSampleInterval] = useState<number>(DEFAULTS.logSampleInterval);
+  const [coopMetric, setCoopMetric] = useState<CoopMetric>(DEFAULTS.coopMetric);
+  const [logRetention, setLogRetention] = useState<number>(DEFAULTS.logRetention);
+  const [resetInterval, setResetInterval] = useState<number>(DEFAULTS.resetInterval);
   const [seatDelayMs, setSeatDelayMs] = useState<number[]>(DEFAULTS.seatDelayMs);
   const setSeatDelay = (i:number, v:number|string) => setSeatDelayMs(arr => { const n=[...arr]; n[i]=Math.max(0, Math.floor(Number(v)||0)); return n; });
 
@@ -7368,17 +7396,11 @@ function DdzRenderer() {
     [seats, seatModels, seatKeys],
   );
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
-  const dropdownKeys = ['core', 'ai', 'interval', 'timeout'] as const;
-  type DropdownKey = typeof dropdownKeys[number];
-  const [dropdownState, setDropdownState] = useState<Record<DropdownKey, boolean>>({
-    core: true,
-    ai: true,
-    interval: false,
-    timeout: false,
-  });
-
-  const toggleDropdown = useCallback((key: DropdownKey) => {
-    setDropdownState((prev) => ({ ...prev, [key]: !prev[key] }));
+  const tabKeys = ['core', 'ai', 'interval', 'timeout'] as const;
+  type DropdownKey = typeof tabKeys[number];
+  const [activeTab, setActiveTab] = useState<DropdownKey>('core');
+  const toggleTab = useCallback((key: DropdownKey) => {
+    setActiveTab(key);
   }, []);
 
   const computeTotalMatches = useCallback(() => {
@@ -7424,6 +7446,12 @@ function DdzRenderer() {
   const doResetAll = () => {
     setEnabled(DEFAULTS.enabled); setRounds(DEFAULTS.rounds); setStartScore(DEFAULTS.startScore);
     setBid(DEFAULTS.bid); setFour2(DEFAULTS.four2); setFarmerCoop(DEFAULTS.farmerCoop);
+    setLandlordMultiplier(DEFAULTS.landlordMultiplier); setFarmerMultiplier(DEFAULTS.farmerMultiplier);
+    setBidLimit(DEFAULTS.bidLimit); setDoubleFactor(DEFAULTS.doubleFactor); setSplitStrategy(DEFAULTS.splitStrategy);
+    setAutoStartDelay(DEFAULTS.autoStartDelay); setFarmerCoopWeight(DEFAULTS.farmerCoopWeight);
+    setPlayScoreWeight(DEFAULTS.playScoreWeight); setTrueSkillWeight(DEFAULTS.trueSkillWeight);
+    setLogSampleInterval(DEFAULTS.logSampleInterval); setCoopMetric(DEFAULTS.coopMetric);
+    setLogRetention(DEFAULTS.logRetention); setResetInterval(DEFAULTS.resetInterval);
     setSeatDelayMs([...DEFAULTS.seatDelayMs]); setSeats([...DEFAULTS.seats]);
     setSeatModels([...DEFAULTS.seatModels]); setSeatKeys(DEFAULTS.seatKeys.map((x:any)=>({ ...x })));
     setLiveLog([]); setResetKey(k => k + 1);
@@ -7550,204 +7578,335 @@ function DdzRenderer() {
           {isRegularMode ? (
         <>
         <section className={styles.settingsCard}>
-          <div className={styles.dropdownStack}>
-            <div className={styles.dropdownSection}>
-              <div className={styles.dropdownHeader}>
+          <div className={styles.tabWrapper}>
+            <div className={styles.tabList} role="tablist">
+              {tabKeys.map((key) => (
                 <button
+                  key={key}
                   type="button"
-                  className={cx(styles.dropdownToggle, dropdownState.core && styles.dropdownToggleOpen)}
-                  aria-expanded={dropdownState.core}
-                  onClick={() => toggleDropdown('core')}
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  className={cx(styles.tabButton, activeTab === key && styles.tabButtonActive)}
+                  onClick={() => toggleTab(key)}
                 >
-                  <span className={styles.dropdownTitle}>对局设置</span>
-                  <span className={cx(styles.dropdownChevron, dropdownState.core && styles.dropdownChevronOpen)} />
+                  <span className={styles.tabLabel}>
+                    {key === 'core'
+                      ? '对局设置'
+                      : key === 'ai'
+                        ? '每家 AI 设置（独立）'
+                        : key === 'interval'
+                          ? '每家出牌最小间隔 (ms)'
+                          : '每家思考超时（秒）'}
+                  </span>
                 </button>
-                <div className={styles.dropdownActions}>
-                  <label className={styles.toggleLabel}>
-                    <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
-                    启用对局
-                  </label>
-                  <button
-                    type="button"
-                    onClick={doResetAll}
-                    className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
-                  >
-                    清空
-                  </button>
-                </div>
-              </div>
-              <div className={cx(styles.dropdownBody, dropdownState.core && styles.dropdownBodyOpen)}>
-                <div className={styles.settingsGrid}>
-                  <label className={styles.fieldGroup}>
-                    <span className={styles.fieldLabel}>局数</span>
-                    <input
-                      className={styles.fieldInput}
-                      type="number"
-                      min={1}
-                      step={1}
-                      value={rounds}
-                      onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
-                    />
-                  </label>
-                  <label className={styles.fieldGroup}>
-                    <span className={styles.fieldLabel}>初始分</span>
-                    <input
-                      className={styles.fieldInput}
-                      type="number"
-                      step={10}
-                      value={startScore}
-                      onChange={e=>setStartScore(Number(e.target.value)||0)}
-                    />
-                  </label>
-                  <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
-                    <div className={styles.fieldLabel}>规则</div>
-                    <div className={styles.checkboxStack}>
-                      <label className={styles.checkboxLabel}>
-                        <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
-                        可抢地主
-                      </label>
-                      <label className={styles.checkboxLabel}>
-                        <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
-                        农民配合
-                      </label>
-                    </div>
-                  </div>
-                  <label className={styles.fieldGroup}>
-                    <span className={styles.fieldLabel}>4带2 规则</span>
-                    <select
-                      className={styles.fieldInput}
-                      value={four2}
-                      onChange={e=>setFour2(e.target.value as Four2Policy)}
+              ))}
+            </div>
+            <div className={styles.tabBody}>
+              {activeTab === 'core' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.tabActions}>
+                    <label className={styles.toggleLabel}>
+                      <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
+                      启用对局
+                    </label>
+                    <button
+                      type="button"
+                      onClick={doResetAll}
+                      className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
                     >
-                      <option value="both">都可</option>
-                      <option value="2singles">两张单牌</option>
-                      <option value="2pairs">两对</option>
-                    </select>
-                  </label>
-                  <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
-                    <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
-                    <div className={styles.fieldActions}>
-                      <div>
-                        <input
-                          ref={allFileRef}
-                          type="file"
-                          accept="application/json"
-                          className={styles.hiddenFileInput}
-                          onChange={handleAllFileUpload}
-                        />
+                      清空
+                    </button>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>局数</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={rounds}
+                        onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>初始分</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        step={10}
+                        value={startScore}
+                        onChange={e=>setStartScore(Number(e.target.value)||0)}
+                      />
+                    </label>
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>规则</div>
+                      <div className={styles.checkboxStack}>
+                        <label className={styles.checkboxLabel}>
+                          <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
+                          可抢地主
+                        </label>
+                        <label className={styles.checkboxLabel}>
+                          <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
+                          农民配合
+                        </label>
+                      </div>
+                    </div>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>4带2 规则</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={four2}
+                        onChange={e=>setFour2(e.target.value as Four2Policy)}
+                      >
+                        <option value="both">都可</option>
+                        <option value="trio">仅炸弹/三带</option>
+                        <option value="single">仅单牌</option>
+                      </select>
+                    </label>
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
+                      <div className={styles.fieldActions}>
+                        <div>
+                          <input
+                            ref={allFileRef}
+                            type="file"
+                            accept="application/json"
+                            className={styles.hiddenFileInput}
+                            onChange={handleAllFileUpload}
+                          />
+                          <button
+                            type="button"
+                            onClick={()=>allFileRef.current?.click()}
+                            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                          >上传</button>
+                        </div>
                         <button
                           type="button"
-                          onClick={()=>allFileRef.current?.click()}
+                          onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
                           className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
-                        >上传</button>
+                        >存档</button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
-                        className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
-                      >存档</button>
                     </div>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>地主倍率</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        value={landlordMultiplier}
+                        onChange={e=>setLandlordMultiplier(Math.max(1, Number(e.target.value)||1))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民倍率</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        value={farmerMultiplier}
+                        onChange={e=>setFarmerMultiplier(Math.max(1, Number(e.target.value)||1))}
+                      />
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>叫分上限</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        max={3}
+                        value={bidLimit}
+                        onChange={e=>setBidLimit(Math.min(3, Math.max(1, Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>加倍参数</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={0.5}
+                        value={doubleFactor}
+                        onChange={e=>setDoubleFactor(Math.max(1, Number(e.target.value)||1))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>拆牌策略</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={splitStrategy}
+                        onChange={e=>setSplitStrategy(e.target.value as SplitStrategy)}
+                      >
+                        <option value="balanced">平衡</option>
+                        <option value="aggressive">进攻</option>
+                        <option value="defensive">防守</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>AI 自动开始延迟 (ms)</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        step={250}
+                        value={autoStartDelay}
+                        onChange={e=>setAutoStartDelay(Math.max(0, Number(e.target.value)||0))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民配合权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={farmerCoopWeight}
+                        onChange={e=>setFarmerCoopWeight(Math.min(1, Math.max(0, Number(e.target.value)||0)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>出牌评分权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={playScoreWeight}
+                        onChange={e=>setPlayScoreWeight(Math.min(1, Math.max(0, Number(e.target.value)||0)))}
+                      />
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>TrueSkill 更新权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0.1}
+                        max={2}
+                        step={0.1}
+                        value={trueSkillWeight}
+                        onChange={e=>setTrueSkillWeight(Math.min(2, Math.max(0.1, Number(e.target.value)||0.1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>日志采样间隔（局）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={logSampleInterval}
+                        onChange={e=>setLogSampleInterval(Math.max(1, Math.floor(Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民配合指标</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={coopMetric}
+                        onChange={e=>setCoopMetric(e.target.value as CoopMetric)}
+                      >
+                        <option value="sync">同步</option>
+                        <option value="tempo">节奏</option>
+                        <option value="support">支援</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>运行日志保留（条）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={50}
+                        step={25}
+                        value={logRetention}
+                        onChange={e=>setLogRetention(Math.max(50, Math.floor(Number(e.target.value)||50)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>重置间隔（局）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={10}
+                        step={5}
+                        value={resetInterval}
+                        onChange={e=>setResetInterval(Math.max(10, Math.floor(Number(e.target.value)||10)))}
+                      />
+                    </label>
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <div className={styles.dropdownSection}>
-              <div className={styles.dropdownHeader}>
-                <button
-                  type="button"
-                  className={cx(styles.dropdownToggle, dropdownState.ai && styles.dropdownToggleOpen)}
-                  aria-expanded={dropdownState.ai}
-                  onClick={() => toggleDropdown('ai')}
-                >
-                  <span className={styles.dropdownTitle}>每家 AI 设置（独立）</span>
-                  <span className={cx(styles.dropdownChevron, dropdownState.ai && styles.dropdownChevronOpen)} />
-                </button>
-              </div>
-              <div className={cx(styles.dropdownBody, dropdownState.ai && styles.dropdownBodyOpen)}>
-                <PlayerConfigPanel
-                  title=""
-                  players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
-                  configs={seatPanelConfigs}
-                  optionGroups={seatOptionGroups}
-                  getMode={(config) => config?.mode}
-                  onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
-                  renderMeta={(index) => (
-                    <div style={{ fontSize:12, color:'#4b5563' }}>
-                      当前：{choiceLabel(seats[index])}
-                    </div>
-                  )}
-                  renderFields={(index) => renderSeatFields(index)}
-                />
-              </div>
-            </div>
-
-            <div className={styles.dropdownSection}>
-              <div className={styles.dropdownHeader}>
-                <button
-                  type="button"
-                  className={cx(styles.dropdownToggle, dropdownState.interval && styles.dropdownToggleOpen)}
-                  aria-expanded={dropdownState.interval}
-                  onClick={() => toggleDropdown('interval')}
-                >
-                  <span className={styles.dropdownTitle}>每家出牌最小间隔 (ms)</span>
-                  <span className={cx(styles.dropdownChevron, dropdownState.interval && styles.dropdownChevronOpen)} />
-                </button>
-              </div>
-              <div className={cx(styles.dropdownBody, dropdownState.interval && styles.dropdownBodyOpen)}>
-                <div className={styles.seatGrid}>
-                  {[0,1,2].map(i=>(
-                    <div key={i} className={styles.seatCard}>
-                      <div className={styles.seatTitle}>{seatName(i)}</div>
-                      <label className={styles.subFieldLabel}>
-                        <span>最小间隔 (ms)</span>
-                        <input
-                          className={styles.fieldInput}
-                          type="number" min={0} step={100}
-                          value={ (seatDelayMs[i] ?? 0) }
-                          onChange={e=>setSeatDelay(i, e.target.value)}
-                        />
-                      </label>
-                    </div>
-
-                  ))}
+              )}
+              {activeTab === 'ai' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <PlayerConfigPanel
+                    title=""
+                    players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
+                    configs={seatPanelConfigs}
+                    optionGroups={seatOptionGroups}
+                    getMode={(config) => config?.mode}
+                    onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
+                    renderMeta={(index) => (
+                      <div style={{ fontSize:12, color:'#4b5563' }}>
+                        当前：{choiceLabel(seats[index])}
+                      </div>
+                    )}
+                    renderFields={(index) => renderSeatFields(index)}
+                  />
                 </div>
-              </div>
-            </div>
+              )}
+              {activeTab === 'interval' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.seatGrid}>
+                    {[0,1,2].map(i=>(
+                      <div key={i} className={styles.seatCard}>
+                        <div className={styles.seatTitle}>{seatName(i)}</div>
+                        <label className={styles.subFieldLabel}>
+                          <span>最小间隔 (ms)</span>
+                          <input
+                            className={styles.fieldInput}
+                            type="number" min={0} step={100}
+                            value={ (seatDelayMs[i] ?? 0) }
+                            onChange={e=>setSeatDelay(i, e.target.value)}
+                          />
+                        </label>
+                      </div>
 
-            <div className={styles.dropdownSection}>
-              <div className={styles.dropdownHeader}>
-                <button
-                  type="button"
-                  className={cx(styles.dropdownToggle, dropdownState.timeout && styles.dropdownToggleOpen)}
-                  aria-expanded={dropdownState.timeout}
-                  onClick={() => toggleDropdown('timeout')}
-                >
-                  <span className={styles.dropdownTitle}>每家思考超时（秒）</span>
-                  <span className={cx(styles.dropdownChevron, dropdownState.timeout && styles.dropdownChevronOpen)} />
-                </button>
-              </div>
-              <div className={cx(styles.dropdownBody, dropdownState.timeout && styles.dropdownBodyOpen)}>
-                <div className={styles.seatGrid}>
-                  {[0,1,2].map(i=>(
-                    <div key={i} className={styles.seatCard}>
-                      <div className={styles.seatTitle}>{seatName(i)}</div>
-                      <label className={styles.subFieldLabel}>
-                        <span>弃牌时间（秒）</span>
-                        <input
-                          className={styles.fieldInput}
-                          type="number" min={5} step={1}
-                          value={ (turnTimeoutSecs[i] ?? 30) }
-                          onChange={e=>{
-                            const v = Math.max(5, Math.floor(Number(e.target.value)||0));
-                            setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
-                          }}
-                        />
-                      </label>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+              {activeTab === 'timeout' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.seatGrid}>
+                    {[0,1,2].map(i=>(
+                      <div key={i} className={styles.seatCard}>
+                        <div className={styles.seatTitle}>{seatName(i)}</div>
+                        <label className={styles.subFieldLabel}>
+                          <span>弃牌时间（秒）</span>
+                          <input
+                            className={styles.fieldInput}
+                            type="number" min={5} step={1}
+                            value={ (turnTimeoutSecs[i] ?? 30) }
+                            onChange={e=>{
+                              const v = Math.max(5, Math.floor(Number(e.target.value)||0));
+                              setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </section>
