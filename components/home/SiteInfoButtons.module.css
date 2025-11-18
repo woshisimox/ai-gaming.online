@@ -13,51 +13,77 @@
 }
 
 .button {
-  padding: 6px 16px;
+  position: relative;
+  border: none;
   border-radius: 999px;
-  font-weight: 600;
+  padding: 6px 20px;
+  font-weight: 700;
   font-size: 14px;
+  font-family: 'PingFang SC', 'Hiragino Sans GB', 'Heiti SC', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont,
+    'Noto Sans CJK SC', sans-serif;
   cursor: pointer;
-  border: 1px solid transparent;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
-  background: #f8fafc;
+  background: transparent;
   color: #0f172a;
   white-space: nowrap;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: color 0.2s ease, transform 0.2s ease;
+  z-index: 0;
 }
 
-.button:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
+.button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--pill-gradient, linear-gradient(120deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.05)));
+  box-shadow: var(--pill-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.65));
+  opacity: 0.95;
+  transition: opacity 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  z-index: -1;
 }
 
 .button:hover {
+  color: #050a1a;
+}
+
+.button:hover::after {
+  opacity: 1;
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+  box-shadow: var(
+      --pill-shadow,
+      inset 0 1px 0 rgba(255, 255, 255, 0.75)
+    ),
+    0 12px 26px rgba(15, 23, 42, 0.25);
+}
+
+.button:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.4);
+  outline-offset: 2px;
 }
 
 .disclaimer {
-  border-color: #dc2626;
-  background: linear-gradient(135deg, #fee2e2, #fecaca);
-  color: #991b1b;
+  --pill-gradient: linear-gradient(120deg, #7f1d1d, #dc2626 60%, #fca5a5);
+  --pill-shadow: 0 12px 26px rgba(127, 29, 29, 0.35);
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 
 .developer {
-  border-color: #2563eb;
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  color: #1d4ed8;
+  --pill-gradient: linear-gradient(120deg, #050a1a, #1d4ed8 65%, #60a5fa);
+  --pill-shadow: 0 12px 26px rgba(37, 99, 235, 0.35);
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
 }
 
 .discord {
-  border-color: #6366f1;
-  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
-  color: #4338ca;
+  --pill-gradient: linear-gradient(120deg, #312e81, #6366f1 60%, #a5b4fc);
+  --pill-shadow: 0 12px 26px rgba(79, 70, 229, 0.35);
+  color: #f8fafc;
 }
 
 .blog {
-  border-color: #d97706;
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  color: #b45309;
+  --pill-gradient: linear-gradient(120deg, #78350f, #d97706 60%, #fcd34d);
+  --pill-shadow: 0 12px 26px rgba(120, 53, 15, 0.35);
+  color: #1f2937;
 }
 
 .backdrop {
