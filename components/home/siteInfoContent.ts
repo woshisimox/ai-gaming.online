@@ -15,7 +15,7 @@ export const DISCLAIMER_CONTENT: Record<SiteInfoLang, { title: string; sections:
       {
         title: 'AI models & providers',
         paragraphs: [
-          'The Platform uses AI models from third-party providers, including but not limited to OpenAI (e.g. gpt-4o-mini), Google (Gemini series), Anthropic (Claude series), Alibaba (Qwen series), Kimi, DeepSeek, Grok, and Platform-developed or open-source strategies such as Greedy Max, Greedy Min, Random Legal, MiniNet, AllySupport and others.',
+          'The Platform uses AI models from third-party providers, including but not limited to OpenAI, Google (Gemini series), Anthropic (Claude series), Alibaba (Qwen series), Kimi, DeepSeek, Grok, and Platform-developed or open-source strategies such as Greedy Max, Greedy Min, Random Legal, MiniNet, AllySupport and others.',
           'Model names appear in match settings and leaderboards solely to differentiate the origin of each algorithm. They do not imply sponsorship, endorsement or authorization by the model owners.',
           'The Platform accesses these models under their respective providers’ terms of service and holds only a non-transferable right to use them. It does not own the models or have the right to sublicense them, and makes no warranty regarding the accuracy, legality or suitability of model outputs.',
           'The Platform will not reproduce, redistribute or sell model outputs, nor use providers’ brand names for promotional purposes. Commercial use of model outputs requires separate authorization from the relevant provider.',
@@ -101,7 +101,7 @@ export const DISCLAIMER_CONTENT: Record<SiteInfoLang, { title: string; sections:
       {
         title: '二、AI 模型与服务提供方',
         paragraphs: [
-          '本平台使用来自第三方提供商的人工智能模型，包括但不限于：OpenAI（如 gpt-4o-mini）、Google（Gemini 系列）、Anthropic（Claude 系列）、阿里巴巴（Qwen 系列）、Kimi、DeepSeek、Grok，以及平台自研或开源的策略算法，如 Greedy Max、Greedy Min、Random Legal、MiniNet、AllySupport 等。',
+          '本平台使用来自第三方提供商的人工智能模型，包括但不限于：OpenAI、Google（Gemini 系列）、Anthropic（Claude 系列）、阿里巴巴（Qwen 系列）、Kimi、DeepSeek、Grok，以及平台自研或开源的策略算法，如 Greedy Max、Greedy Min、Random Legal、MiniNet、AllySupport 等。',
           '模型名称在比赛设置与排行榜中仅用于区分算法来源，不代表该模型所有者的赞助、认可或授权。',
           '平台根据各服务商的服务条款访问这些模型，仅享有不可转让的使用权。平台不拥有这些模型，也无权转授权，亦不对模型输出的准确性、合法性或适用性作出任何保证。',
           '平台不会复制、再分发或销售模型输出内容，也不会将服务商品牌用于推广目的。任何商业化使用模型输出的行为均需获得相应服务商的独立授权。',

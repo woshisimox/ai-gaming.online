@@ -121,8 +121,7 @@ const COPY = {
     winnerLabel: { pro: '甲方胜', con: '乙方胜', draw: '平局' },
     manualMeta: '人类输入',
     builtinMeta: '内置脚本',
-    providerMetaDefault: '默认模型',
-    externalHint: '需填写 API Key 方可调用对应模型。',
+    externalHint: '需填写 API Key 与模型名称方可调用对应模型。',
     builtinHint: '使用平台内置脚本自动生成观点。',
     manualArgumentPrompt: (role: string) => `请以 ${role} 身份输入本轮发言：`,
     manualVerdictPrompt: '请输入评委的判词（包含理由）：',
@@ -163,8 +162,7 @@ const COPY = {
     winnerLabel: { pro: 'Affirmative wins', con: 'Negative wins', draw: 'Draw' },
     manualMeta: 'Manual input',
     builtinMeta: 'Built-in script',
-    providerMetaDefault: 'Default model',
-    externalHint: 'API Key is required for external providers.',
+    externalHint: 'API Key and a model name are required for external providers.',
     builtinHint: 'Use the built-in heuristic debater.',
     manualArgumentPrompt: (role: string) => `Enter ${role}'s statement for this round:`,
     manualVerdictPrompt: 'Enter the judge’s verdict summary:',
@@ -398,12 +396,8 @@ export default function DebateRenderer() {
       if (config.mode === 'builtin') return <span>{copy.builtinMeta}</span>;
       if (isChatProvider(config.mode)) {
         const provider = chatProviderLabel(config.mode);
-        const model = (config.model || '').trim() || copy.providerMetaDefault;
-        return (
-          <span>
-            {provider} · {model}
-          </span>
-        );
+        const model = (config.model || '').trim();
+        return <span>{model ? `${provider} · ${model}` : provider}</span>;
       }
       return null;
     },
@@ -434,12 +428,12 @@ export default function DebateRenderer() {
               />
             </label>
             <label>
-              <span>Model</span>
+              <span>Model *</span>
               <input
                 type="text"
                 value={config.model || ''}
                 onChange={(event) => updateConfig(index, { model: event.target.value })}
-                placeholder="默认模型"
+                placeholder={lang === 'zh' ? '请输入模型名称' : 'Model name'}
               />
             </label>
             {showBase ? (
@@ -460,12 +454,17 @@ export default function DebateRenderer() {
       }
       return null;
     },
-    [copy, updateConfig]
+    [copy, lang, updateConfig]
   );
   const runExternalTurn = useCallback(
     async (role: DebateRole, task: 'argument' | 'topic' | 'verdict', config: DebatePlayerConfig, round?: number) => {
       if (!isChatProvider(config.mode)) {
         throw new Error('Unsupported provider');
+      }
+      const trimmedModel = (config.model || '').trim();
+      if (!trimmedModel) {
+        const message = lang === 'zh' ? '请先填写模型名称' : 'Model name is required';
+        throw new Error(message);
       }
       const response = await fetch('/api/debate/turn', {
         method: 'POST',
@@ -473,7 +472,7 @@ export default function DebateRenderer() {
         body: JSON.stringify({
           provider: config.mode,
           apiKey: config.apiKey,
-          model: config.model,
+          model: trimmedModel,
           baseUrl: config.baseUrl,
           role,
           task,

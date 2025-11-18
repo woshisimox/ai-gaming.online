@@ -1714,7 +1714,7 @@ const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
 const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeThoughtIdentity(choice));
 
 function makeThoughtIdentity(choice: BotChoice, model?: string, base?: string): string {
-  const normalizedModel = (model ?? defaultModelFor(choice) ?? '').trim();
+  const normalizedModel = (model ?? '').trim();
   const normalizedBase = (base ?? '').trim();
   return `${choice}|${normalizedModel}|${normalizedBase}`;
 }
@@ -1728,8 +1728,7 @@ function thoughtLabelForIdentity(id: string): string {
   const { choice, model, base } = parseThoughtIdentity(id);
   const label = choiceLabel(choice as BotChoice);
   if (typeof choice === 'string' && choice.startsWith('ai:')) {
-    const fallbackModel = defaultModelFor(choice as BotChoice);
-    const displayModel = model || fallbackModel || '';
+    const displayModel = (model || '').trim();
     return displayModel ? `${label}:${displayModel}` : label;
   }
   if (choice === 'http') {
@@ -3195,18 +3194,16 @@ function KnockoutPanel() {
                 </label>
                 {entry.choice.startsWith('ai:') && (
                   <label style={{ display:'block' }}>
-                    {lang === 'en' ? 'Model (optional)' : '模型（可选）'}
+                    {lang === 'en' ? 'Model (required)' : '模型（必填）'}
                     <input
                       type="text"
                       value={entry.model}
-                      placeholder={defaultModelFor(entry.choice)}
+                      placeholder={lang === 'en' ? 'Model name' : '请输入模型名称'}
                       onChange={e => handleEntryModelChange(entry.id, e.target.value)}
                       style={{ width:'100%', marginTop:4 }}
                     />
                     <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
-                      {lang === 'en'
-                        ? `Leave blank to use ${defaultModelFor(entry.choice)}.`
-                        : `留空则使用推荐：${defaultModelFor(entry.choice)}`}
+                      {lang === 'en' ? 'Specify the exact model/version from the provider.' : '请填写提供方的模型或版本名称。'}
                     </div>
                   </label>
                 )}
@@ -3736,17 +3733,6 @@ function Section({ title, children }:{title:string; children:React.ReactNode}) {
 }
 
 /* ====== 模型预设/校验 ====== */
-function defaultModelFor(choice: BotChoice): string {
-  switch (choice) {
-    case 'ai:openai': return 'gpt-4o-mini';
-    case 'ai:gemini': return 'gemini-1.5-flash';
-    case 'ai:grok':  return 'grok-2-latest';
-    case 'ai:kimi':  return 'kimi-k2-0905-preview';
-    case 'ai:qwen':  return 'qwen-plus';
-    case 'ai:deepseek': return 'deepseek-chat';
-    default: return '';
-  }
-}
 function normalizeModelForProvider(choice: BotChoice, input: string): string {
   const m = (input || '').trim(); if (!m) return '';
   const low = m.toLowerCase();
@@ -4032,7 +4018,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const seatIdentity = useCallback((i:number) => {
     const choice = props.seats[i] as BotChoice;
     const modelInput = Array.isArray(props.seatModels) ? props.seatModels[i] : undefined;
-    const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || defaultModelFor(choice);
+    const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || (modelInput || '').trim();
     const base = readProviderBase(choice, props.seatKeys?.[i]);
     return makeThoughtIdentity(choice, normalizedModel, base);
   }, [props.seats, props.seatModels, props.seatKeys]);
@@ -4879,6 +4865,25 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const LADDER_KEY = 'ddz_ladder_store_v1';
   const LADDER_EMPTY: LadderStore = { schema:'ddz-ladder@1', updatedAt:new Date().toISOString(), players:{} };
   const LADDER_DEFAULT: LadderAgg = { n:0, sum:0, delta:0, deltaR:0, K:20, N0:20, matches:0 };
+  // 历史版本曾自动注入的模型名，仅用于迁移旧版存档，避免继续显示默认版本号
+  const LEGACY_DEFAULT_MODELS = ['gpt-4o-mini','gemini-1.5-flash','grok-2-latest','kimi-k2-0905-preview','qwen-plus','deepseek-chat'];
+
+  function migrateLegacyLadderEntry(targetId: string, store: LadderStore): string {
+    const [choice, model = '', base = ''] = String(targetId || '').split('|');
+    if (!choice.startsWith('ai:') || model) {
+      return targetId;
+    }
+    for (const legacy of LEGACY_DEFAULT_MODELS) {
+      const legacyId = `${choice}|${legacy}|${base}`;
+      if (store.players[legacyId]) {
+        const donor = store.players[legacyId];
+        delete store.players[legacyId];
+        store.players[targetId] = { ...donor, id: targetId };
+        break;
+      }
+    }
+    return targetId;
+  }
 
   function readLadder(): LadderStore {
     try { const raw = localStorage.getItem(LADDER_KEY); if (raw) { const j = JSON.parse(raw); if (j?.schema==='ddz-ladder@1') return j as LadderStore; } } catch {}
@@ -4889,9 +4894,11 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   }
   function ladderUpdateLocal(id:string, label:string, sWin:number, pExp:number, weight:number=1, matchIncrement:number=1) {
     const st = readLadder();
-    const ent = st.players[id] || { id, label, current: { ...LADDER_DEFAULT }, history: [] };
+    const resolvedId = migrateLegacyLadderEntry(id, st);
+    const ent = st.players[resolvedId] || { id: resolvedId, label, current: { ...LADDER_DEFAULT }, history: [] };
     if (!ent.current) ent.current = { ...LADDER_DEFAULT };
     if (!ent.label) ent.label = label;
+    else ent.label = label;
     const w = Math.max(0, Number(weight) || 0);
     const matchInc = Math.max(0, Number(matchIncrement) || 0);
     ent.current.n += w;
@@ -4906,7 +4913,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     ent.current.delta = ent.current.n > 0 ? (ent.current.sum / ent.current.n) : 0;
     const shrink = Math.sqrt(ent.current.n / (ent.current.n + Math.max(1, N0)));
     ent.current.deltaR = K * ent.current.delta * shrink;
-    st.players[id] = ent;
+    st.players[resolvedId] = ent;
     writeLadder(st);
     try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
   }
@@ -5040,8 +5047,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const choice = props.seats[i] as BotChoice;
     const label = choiceLabel(choice);
     if ((choice as string).startsWith('built-in') || choice === 'human') return label;
-    const model = (props.seatModels?.[i]) || defaultModelFor(choice);
-    return `${label}:${model}`;
+    const model = (props.seatModels?.[i] || '').trim();
+    return model ? `${label}:${model}` : label;
   };
 
   const handleScoreSave = () => {
@@ -5168,14 +5175,18 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
 
     const buildSeatSpecs = (): any[] => {
       return props.seats.slice(0,3).map((choice, i) => {
-        const normalized = normalizeModelForProvider(choice, props.seatModels[i] || '');
-        const model = normalized || defaultModelFor(choice);
+        const manualModel = (props.seatModels[i] || '').trim();
+        const normalized = normalizeModelForProvider(choice, manualModel);
+        const model = normalized || manualModel;
         const keys = props.seatKeys[i] || {};
+        if (choice.startsWith('ai:') && !model) {
+          throw new Error(`${seatName(i)} 的 ${choiceLabel(choice)} 需填写模型名称`);
+        }
         switch (choice) {
           case 'ai:openai':   return { choice, model, apiKey: keys.openai || '' };
           case 'ai:gemini':   return { choice, model, apiKey: keys.gemini || '' };
           case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
-          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '' };
+          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '', baseUrl: readProviderBase(choice, keys) };
           case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
           case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '', baseUrl: readProviderBase(choice, keys) };
           case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
@@ -5190,7 +5201,9 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         if (s.choice.startsWith('built-in')) return `${nm}=${choiceLabel(s.choice as BotChoice)}`;
         if (s.choice === 'http') return `${nm}=HTTP(${s.baseUrl ? 'custom' : 'default'})`;
         if (s.choice === 'ai:deepseek') return `${nm}=DeepSeek(${s.baseUrl ? 'custom' : 'default'})`;
-        return `${nm}=${choiceLabel(s.choice as BotChoice)}(${s.model || defaultModelFor(s.choice as BotChoice)})`;
+        const model = typeof s.model === 'string' ? s.model.trim() : '';
+        const suffix = model ? `(${model})` : '';
+        return `${nm}=${choiceLabel(s.choice as BotChoice)}${suffix}`;
       }).join(', ');
 
     const markRoundFinishedIfNeeded = (
@@ -7128,7 +7141,7 @@ const DEFAULTS = {
   farmerCoop: true,
   seatDelayMs: [1000,1000,1000] as number[],
   seats: ['built-in:greedy-max','built-in:greedy-min','built-in:random-legal'] as BotChoice[],
-  // 让选择提供商时自动写入推荐模型；避免初始就带上 OpenAI 的模型名
+  // 模型初始为空，由用户手动填写
   seatModels: ['', '', ''],
   seatKeys: [
     { openai:'', deepseekBase:'' },
@@ -7242,7 +7255,7 @@ function DdzRenderer() {
     });
     setSeatModels((arr) => {
       const copy = [...arr];
-      copy[index] = defaultModelFor(choice);
+      copy[index] = '';
       return copy;
     });
   }, []);
@@ -7253,11 +7266,11 @@ function DdzRenderer() {
       if (choice.startsWith('ai:')) {
         blocks.push(
           <label key={`model-${i}`} style={{ display: 'block', marginBottom: 6 }}>
-            模型（可选）
+            模型（必填）
             <input
               type="text"
               value={seatModels[i]}
-              placeholder={defaultModelFor(choice)}
+              placeholder="请输入模型名称"
               onChange={(e) => {
                 const v = e.target.value;
                 setSeatModels((arr) => {
@@ -7268,7 +7281,7 @@ function DdzRenderer() {
               }}
               style={{ width: '100%' }}
             />
-            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>留空则使用推荐：{defaultModelFor(choice)}</div>
+            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>需填写提供方的模型或版本名称。</div>
           </label>,
         );
       }
@@ -7380,7 +7393,7 @@ function DdzRenderer() {
       if (!choice) return '';
       const modelInput = Array.isArray(seatModels) ? seatModels[i] : '';
       const normalizedModel = normalizeModelForProvider(choice, modelInput || '')
-        || (modelInput || defaultModelFor(choice));
+        || (modelInput || '');
       const base = readProviderBase(choice, seatKeys?.[i]);
       const identity = makeThoughtIdentity(choice, normalizedModel, base);
       const label = thoughtLabelForIdentity(identity);

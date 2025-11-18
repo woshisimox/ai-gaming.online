@@ -5,7 +5,6 @@ export type ChatProviderId = 'ai:openai' | 'ai:deepseek' | 'ai:kimi' | 'ai:qwen'
 interface ProviderMeta {
   id: ChatProviderId;
   label: string;
-  defaultModel: string;
   base: string;
   allowBaseOverride?: boolean;
 }
@@ -14,28 +13,24 @@ const PROVIDERS: Record<ChatProviderId, ProviderMeta> = {
   'ai:openai': {
     id: 'ai:openai',
     label: 'OpenAI',
-    defaultModel: 'gpt-4o-mini',
     base: 'https://api.openai.com',
     allowBaseOverride: true,
   },
   'ai:deepseek': {
     id: 'ai:deepseek',
     label: 'DeepSeek',
-    defaultModel: 'deepseek-chat',
     base: 'https://api.deepseek.com',
     allowBaseOverride: true,
   },
   'ai:kimi': {
     id: 'ai:kimi',
     label: 'Kimi',
-    defaultModel: 'moonshot-v1-8k',
     base: 'https://api.moonshot.cn',
     allowBaseOverride: true,
   },
   'ai:qwen': {
     id: 'ai:qwen',
     label: 'Qwen',
-    defaultModel: 'qwen-plus',
     base: 'https://dashscope.aliyuncs.com/compatible-mode',
   },
 };
@@ -137,9 +132,14 @@ export async function requestChatCompletion({
     throw new Error(`未提供 ${meta.label} API Key`);
   }
 
+  const trimmedModel = (model || '').trim();
+  if (!trimmedModel) {
+    throw new Error(`${meta.label} 需要模型名称，请在设置中填写。`);
+  }
+
   const endpoint = resolveEndpoint(meta, baseUrl);
   const body = {
-    model: (model && model.trim()) || meta.defaultModel,
+    model: trimmedModel,
     temperature,
     messages: [
       { role: 'system', content: system },

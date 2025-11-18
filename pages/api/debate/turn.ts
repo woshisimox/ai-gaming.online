@@ -170,10 +170,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const { system, user } = buildPrompt(body, transcript);
     const task = ensureTask(body.task);
 
+    const model = typeof body.model === 'string' ? body.model.trim() : '';
+    if (!model) {
+      res.status(400).json({ error: `${chatProviderLabel(provider)} 需要模型名称` });
+      return;
+    }
+
     const text = await requestChatCompletion({
       provider,
       apiKey: body.apiKey,
-      model: body.model,
+      model,
       baseUrl: body.baseUrl,
       system,
       user,

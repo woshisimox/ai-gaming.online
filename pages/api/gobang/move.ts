@@ -126,12 +126,16 @@ async function resolveMove(body: RequestBody, legalMoves: GobangAction[]): Promi
   if (!isChatProvider(provider)) {
     throw new Error('暂不支持的外置 AI 提供方');
   }
+  const model = typeof body.model === 'string' ? body.model.trim() : '';
+  if (!model) {
+    throw new Error(`${chatProviderLabel(provider)} 需要模型名称`);
+  }
   const { system, user } = buildPrompt(body, legalMoves);
 
   const rawText = await requestChatCompletion({
     provider,
     apiKey: body.apiKey,
-    model: body.model,
+    model,
     baseUrl: body.baseUrl,
     system,
     user,

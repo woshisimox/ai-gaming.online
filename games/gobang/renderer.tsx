@@ -580,13 +580,17 @@ export default function GobangRenderer() {
       playerIndex: 0 | 1
     ): Promise<{ action: GobangAction; note?: string }> => {
       const legalMoves = legalMovesInput.map((move) => ({ row: move.row, col: move.col }));
+      const model = (config.model || '').trim();
+      if (!model) {
+        throw new Error('请先为外置 AI 填写模型名称。');
+      }
       const response = await fetch('/api/gobang/move', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           provider: mode,
           apiKey: config.apiKey,
-          model: config.model,
+          model,
           baseUrl: config.baseUrl,
           token: config.token,
           observation,
@@ -720,15 +724,15 @@ export default function GobangRenderer() {
                 />
               </label>
               <label className={styles.configLabel}>
-                模型（可选）
+                模型（必填）
                 <input
                   type="text"
                   value={config.model ?? ''}
                   onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
                   className={styles.configInput}
-                  placeholder="gpt-4o-mini"
+                  placeholder="请输入模型名称"
                 />
-                <span className={styles.configHelp}>留空使用推荐模型 gpt-4o-mini。</span>
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
               </label>
             </div>
           );
@@ -747,15 +751,15 @@ export default function GobangRenderer() {
                 />
               </label>
               <label className={styles.configLabel}>
-                模型（可选）
+                模型（必填）
                 <input
                   type="text"
                   value={config.model ?? ''}
                   onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
                   className={styles.configInput}
-                  placeholder="deepseek-chat"
+                  placeholder="请输入模型名称"
                 />
-                <span className={styles.configHelp}>留空使用推荐模型 deepseek-chat。</span>
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
               </label>
               <label className={styles.configLabel}>
                 API 基础地址（可选）
@@ -785,15 +789,15 @@ export default function GobangRenderer() {
                 />
               </label>
               <label className={styles.configLabel}>
-                模型（可选）
+                模型（必填）
                 <input
                   type="text"
                   value={config.model ?? ''}
                   onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
                   className={styles.configInput}
-                  placeholder="moonshot-v1-8k"
+                  placeholder="请输入模型名称"
                 />
-                <span className={styles.configHelp}>留空使用推荐模型 moonshot-v1-8k。</span>
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
               </label>
               <label className={styles.configLabel}>
                 API 基础地址（可选）
@@ -823,15 +827,15 @@ export default function GobangRenderer() {
                 />
               </label>
               <label className={styles.configLabel}>
-                模型（可选）
+                模型（必填）
                 <input
                   type="text"
                   value={config.model ?? ''}
                   onChange={(event) => updatePlayerConfig(index, { model: event.target.value })}
                   className={styles.configInput}
-                  placeholder="qwen-plus"
+                  placeholder="请输入模型名称"
                 />
-                <span className={styles.configHelp}>留空使用推荐模型 qwen-plus。</span>
+                <span className={styles.configHelp}>请填写提供方的模型或版本名称。</span>
               </label>
             </div>
           );

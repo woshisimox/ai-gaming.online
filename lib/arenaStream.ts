@@ -44,22 +44,25 @@ export function getBot(spec: BotSpec, seatIdx: number): IBot {
 
   if (spec.kind === 'ai') {
     const model = (spec.model || '').trim();
+    if (!model) {
+      throw new Error(`Seat ${label} 需要为 ${spec.name} 配置模型名称`);
+    }
 
     const mark = (name: string, bot: IBot) => asBot(bot, { choice: `ai:${name}`, phaseAware: true });
     if (spec.name === 'openai') {
-      return mark('openai', OpenAIBot({ apiKey: spec.apiKey || '', model: model || 'gpt-4o-mini' }));
+      return mark('openai', OpenAIBot({ apiKey: spec.apiKey || '', model }));
     }
     if (spec.name === 'gemini') {
-      return mark('gemini', GeminiBot({ apiKey: spec.apiKey || '', model: model || 'gemini-1.5-flash' }));
+      return mark('gemini', GeminiBot({ apiKey: spec.apiKey || '', model }));
     }
     if (spec.name === 'grok') {
-      return mark('grok', GrokBot({ apiKey: spec.apiKey || '', model: model || 'grok-2-latest' }));
+      return mark('grok', GrokBot({ apiKey: spec.apiKey || '', model }));
     }
     if (spec.name === 'kimi') {
-      return mark('kimi', KimiBot({ apiKey: spec.apiKey || '', model: model || 'moonshot-v1-8k' }));
+      return mark('kimi', KimiBot({ apiKey: spec.apiKey || '', model }));
     }
     if (spec.name === 'qwen') {
-      return mark('qwen', QwenBot({ apiKey: spec.apiKey || '', model: model || 'qwen-plus' }));
+      return mark('qwen', QwenBot({ apiKey: spec.apiKey || '', model }));
     }
   }
 

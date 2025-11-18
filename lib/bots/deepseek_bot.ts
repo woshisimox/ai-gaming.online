@@ -96,8 +96,10 @@ async function requestDeepseek(
   await throttle();
   const endpoints = resolveDeepseekEndpoints(o.baseUrl);
   const { system, user } = buildDouPrompts(ctx, phase, mode);
+  const model = (o.model && String(o.model).trim()) || '';
+  if (!model) throw new Error('Missing DeepSeek model name');
   const body = {
-    model: (o.model && String(o.model).trim()) || 'deepseek-chat',
+    model,
     temperature: 0.2,
     messages: [
       { role: 'system', content: system },

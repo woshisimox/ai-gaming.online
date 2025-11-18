@@ -72,12 +72,14 @@ async function requestQwen(
 ) {
   await throttle();
   const url = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
+  const model = (o.model || '').trim();
+  if (!model) throw new Error('Missing Qwen model name');
   const { system, user } = buildDouPrompts(ctx, phase, mode);
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
-      model: o.model || 'qwen-plus',
+      model,
       temperature: 0.2,
       messages: [
         { role: 'system', content: system },
