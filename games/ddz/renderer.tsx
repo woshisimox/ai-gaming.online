@@ -7593,7 +7593,7 @@ function DdzRenderer() {
                     {key === 'core'
                       ? '对局设置'
                       : key === 'ai'
-                        ? '每家 AI 设置（独立）'
+                        ? '选手设置'
                         : key === 'interval'
                           ? '每家出牌最小间隔 (ms)'
                           : '每家思考超时（秒）'}
