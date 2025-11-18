@@ -2,6 +2,7 @@
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
 import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
+import styles from './renderer.module.css';
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { PageSeoMeta } from '../../lib/seoConfig';
 import {
@@ -238,6 +239,8 @@ const TRANSLATIONS: TransRule[] = [
 
   { zh: '关闭后不可开始/继续对局；再次勾选即可恢复。', en: 'Disabled matches cannot start/continue; tick again to restore.' },
 ];
+
+const cx = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');
 function hasChinese(s: string) { return /[\u4e00-\u9fff]/.test(s); }
 
 let cachedCreatePortal: ((children: ReactNode, container: Element | DocumentFragment) => ReactNode) | null = null;
@@ -3027,8 +3030,9 @@ function KnockoutPanel() {
                 />
               </label>
               <button
+                type="button"
                 onClick={handleResetAll}
-                style={{ padding:'4px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
               >{lang === 'en' ? 'Reset' : '清空'}</button>
             </div>
           </div>
@@ -3087,13 +3091,15 @@ function KnockoutPanel() {
                   onChange={handleAllFileUpload}
                 />
                 <button
+                  type="button"
                   onClick={() => allFileRef.current?.click()}
-                  style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                  className={cx(styles.pillButton, styles.variantGhost, styles.small)}
                 >{lang === 'en' ? 'Upload' : '上传'}</button>
               </label>
               <button
+                type="button"
                 onClick={() => window.dispatchEvent(new Event('ddz-all-save'))}
-                style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
               >{lang === 'en' ? 'Save' : '存档'}</button>
             </div>
           </div>
@@ -3145,16 +3151,10 @@ function KnockoutPanel() {
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
                   <div style={{ fontWeight:600 }}>{participantLabel(idx)}</div>
                   <button
+                    type="button"
                     onClick={() => handleRemoveEntry(entry.id)}
                     disabled={!canRemove}
-                    style={{
-                      padding:'4px 8px',
-                      borderRadius:6,
-                      border:'1px solid #d1d5db',
-                      background: canRemove ? '#fff' : '#f3f4f6',
-                      color:'#1f2937',
-                      cursor: canRemove ? 'pointer' : 'not-allowed',
-                    }}
+                    className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
                   >{lang === 'en' ? 'Remove' : '移除'}</button>
                 </div>
                 <label style={{ display:'block' }}>
@@ -3319,8 +3319,10 @@ function KnockoutPanel() {
           })}
         </div>
         <button
+          type="button"
           onClick={handleAddEntry}
-          style={{ marginTop:12, padding:'6px 12px', borderRadius:8, border:'1px solid #d1d5db', background:'#f9fafb', cursor:'pointer' }}
+          className={cx(styles.pillButton, styles.variantGhost)}
+          style={{ marginTop:12 }}
         >{lang === 'en' ? 'Add participant' : '新增参赛者'}</button>
       </div>
 
@@ -3384,28 +3386,16 @@ function KnockoutPanel() {
 
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:16 }}>
         <button
+          type="button"
           onClick={handleGenerate}
           disabled={!enabled}
-          style={{
-            padding:'6px 12px',
-            borderRadius:8,
-            border:'1px solid #d1d5db',
-            background: enabled ? '#2563eb' : '#9ca3af',
-            color:'#fff',
-            cursor: enabled ? 'pointer' : 'not-allowed',
-          }}
+          className={cx(styles.pillButton, styles.variantPrimary)}
         >{lang === 'en' ? 'Generate bracket' : '生成对阵'}</button>
         <button
+          type="button"
           onClick={handleReset}
           disabled={!enabled || !rounds.length}
-          style={{
-            padding:'6px 12px',
-            borderRadius:8,
-            border:'1px solid #d1d5db',
-            background: rounds.length && enabled ? '#fff' : '#f3f4f6',
-            color:'#1f2937',
-            cursor: rounds.length && enabled ? 'pointer' : 'not-allowed',
-          }}
+          className={cx(styles.pillButton, styles.variantGhost)}
         >{lang === 'en' ? 'Reset bracket' : '重置对阵'}</button>
       </div>
       {error && (
@@ -3433,17 +3423,10 @@ function KnockoutPanel() {
                   const startDisabled = !enabled || liveRunning || automationActive || !hasPendingMatch;
                   return (
                     <button
+                      type="button"
                       onClick={handleStartRound}
                       disabled={startDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: startDisabled ? '#f3f4f6' : '#2563eb',
-                        color: startDisabled ? '#9ca3af' : '#fff',
-                        cursor: startDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantPrimary)}
                     >{lang === 'en' ? 'Start' : '开始'}</button>
                   );
                 })()}
@@ -3451,17 +3434,10 @@ function KnockoutPanel() {
                   const pauseDisabled = !liveRunning;
                   return (
                     <button
+                      type="button"
                       onClick={handlePauseRound}
                       disabled={pauseDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: pauseDisabled ? '#f3f4f6' : (livePaused ? '#bfdbfe' : '#fde68a'),
-                        color: pauseDisabled ? '#9ca3af' : (livePaused ? '#1e3a8a' : '#92400e'),
-                        cursor: pauseDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantAmber)}
                     >{livePaused ? (lang === 'en' ? 'Resume' : '继续') : (lang === 'en' ? 'Pause' : '暂停')}</button>
                   );
                 })()}
@@ -3469,17 +3445,10 @@ function KnockoutPanel() {
                   const stopDisabled = !liveRunning && !automationActive;
                   return (
                     <button
+                      type="button"
                       onClick={handleStopRound}
                       disabled={stopDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: stopDisabled ? '#f3f4f6' : '#fee2e2',
-                        color: stopDisabled ? '#9ca3af' : '#b91c1c',
-                        cursor: stopDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantDanger)}
                     >{lang === 'en' ? 'Stop' : '停止'}</button>
                   );
                 })()}
@@ -3600,16 +3569,14 @@ function KnockoutPanel() {
                                 return (
                                   <button
                                     key={player}
+                                    type="button"
                                     onClick={() => handleToggleEliminated(ridx, midx, player)}
                                     disabled={disabled}
-                                    style={{
-                                      padding:'4px 10px',
-                                      borderRadius:8,
-                                      border:'1px solid #d1d5db',
-                                      background: isActive ? '#dc2626' : disabled ? '#f3f4f6' : '#fff',
-                                      color: isActive ? '#fff' : disabled ? '#9ca3af' : '#1f2937',
-                                      cursor: disabled ? 'not-allowed' : 'pointer',
-                                    }}
+                                    className={cx(
+                                      styles.pillButton,
+                                      isActive ? styles.variantDanger : styles.variantGhost,
+                                      styles.small,
+                                    )}
                                   >{lang === 'en' ? `Eliminate ${displayName(player)}` : `淘汰 ${displayName(player)}`}</button>
                                 );
                               })}
@@ -6510,43 +6477,22 @@ if (m.type === 'event' && m.kind === 'play') {
   const controlsContent = (
     <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
       <button
+        type="button"
         onClick={start}
         disabled={running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: running ? '#f3f4f6' : '#2563eb',
-          color: running ? '#9ca3af' : '#fff',
-          cursor: running ? 'not-allowed' : 'pointer',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantPrimary)}
       >开始</button>
       <button
+        type="button"
         onClick={togglePause}
         disabled={!running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: !running ? '#f3f4f6' : (paused ? '#bfdbfe' : '#fde68a'),
-          color: !running ? '#9ca3af' : (paused ? '#1e3a8a' : '#92400e'),
-          cursor: !running ? 'not-allowed' : 'pointer',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantAmber)}
       >{paused ? '继续' : '暂停'}</button>
       <button
+        type="button"
         onClick={stop}
         disabled={!running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: running ? '#fee2e2' : '#f3f4f6',
-          color: running ? '#b91c1c' : '#9ca3af',
-          cursor: running ? 'pointer' : 'not-allowed',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantDanger)}
       >停止</button>
       <span style={{ display:'inline-flex', alignItems:'center', padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:8, fontSize:12, background:'#fff' }}>
         剩余局数：{remainingGames}
@@ -7018,15 +6964,10 @@ const handleAllSaveInner = () => {
                     {canAdoptHint && (
                       <div>
                         <button
+                          type="button"
                           onClick={applyHumanHint}
                           disabled={humanSubmitting || humanExpired}
-                          style={{
-                            padding:'4px 10px',
-                            border:'1px solid #3b82f6',
-                            borderRadius:6,
-                            background: humanSubmitting || humanExpired ? '#dbeafe' : '#3b82f6',
-                            color: humanSubmitting || humanExpired ? '#6b7280' : '#fff',
-                          }}
+                          className={cx(styles.pillButton, styles.variantPrimary, styles.tiny)}
                         >
                           {lang === 'en' ? 'Adopt suggestion' : '采纳建议'}
                         </button>
@@ -7036,31 +6977,25 @@ const handleAllSaveInner = () => {
                 )}
                 <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                   <button
+                    type="button"
                     onClick={handleHumanPlay}
                     disabled={humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired}
-                    style={{
-                      padding:'6px 12px',
-                      border:'1px solid #2563eb',
-                      borderRadius:8,
-                      background: humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired ? '#e5e7eb' : '#2563eb',
-                      color: humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired ? '#6b7280' : '#fff',
-                    }}
+                    className={cx(styles.pillButton, styles.variantPrimary)}
                   >{lang === 'en' ? 'Play selected' : '出牌'}</button>
                   <button
+                    type="button"
                     onClick={handleHumanPass}
                     disabled={humanSubmitting || !humanCanPass || humanExpired}
-                    style={{
-                      padding:'6px 12px',
-                      border:'1px solid #d1d5db',
-                      borderRadius:8,
-                      background: humanMustPass ? '#fee2e2' : (humanSubmitting || !humanCanPass || humanExpired ? '#f3f4f6' : '#fff'),
-                      color: humanMustPass ? '#b91c1c' : '#1f2937',
-                    }}
+                    className={cx(
+                      styles.pillButton,
+                      humanMustPass ? styles.variantDanger : styles.variantGhost,
+                    )}
                   >{lang === 'en' ? 'Pass' : '过'}</button>
                   <button
+                    type="button"
                     onClick={handleHumanClear}
                     disabled={humanSubmitting || humanSelectedCount === 0 || humanExpired}
-                    style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                    className={cx(styles.pillButton, styles.variantGhost)}
                   >{lang === 'en' ? 'Clear selection' : '清空选择'}</button>
                 </div>
               </>
@@ -7068,28 +7003,32 @@ const handleAllSaveInner = () => {
             {humanPhase === 'bid' && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 <button
+                  type="button"
                   onClick={() => handleHumanBid(true)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #2563eb', borderRadius:8, background: humanSubmitting || humanExpired ? '#e5e7eb' : '#2563eb', color: humanSubmitting || humanExpired ? '#6b7280' : '#fff' }}
+                  className={cx(styles.pillButton, styles.variantPrimary)}
                 >{lang === 'en' ? 'Bid' : '抢地主'}</button>
                 <button
+                  type="button"
                   onClick={() => handleHumanBid(false)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                  className={cx(styles.pillButton, styles.variantGhost)}
                 >{lang === 'en' ? 'Pass' : '不抢'}</button>
               </div>
             )}
             {humanPhase === 'double' && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 <button
+                  type="button"
                   onClick={() => handleHumanDouble(true)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #2563eb', borderRadius:8, background: humanSubmitting || humanExpired ? '#e5e7eb' : '#2563eb', color: humanSubmitting || humanExpired ? '#6b7280' : '#fff' }}
+                  className={cx(styles.pillButton, styles.variantPrimary)}
                 >{lang === 'en' ? 'Double' : '加倍'}</button>
                 <button
+                  type="button"
                   onClick={() => handleHumanDouble(false)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                  className={cx(styles.pillButton, styles.variantGhost)}
                 >{lang === 'en' ? 'No double' : '不加倍'}</button>
               </div>
             )}
@@ -7156,8 +7095,9 @@ const handleAllSaveInner = () => {
   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
     <div style={{ fontWeight:700 }}>运行日志</div>
     <button
+      type="button"
       onClick={() => { try { const lines=(allLogsRef.current||[]) as string[]; const ts=new Date().toISOString().replace(/[:.]/g,'-'); const text=lines.length?lines.join('\n'):'（暂无）'; const blob=new Blob([text],{type:'text/plain;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`run-log_${ts}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1200);} catch(e){ console.error('[runlog] save error', e); } }}
-      style={{ padding:'6px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+      className={cx(styles.pillButton, styles.variantGhost, styles.small)}
     >存档</button>
   </div>
 
@@ -7555,30 +7495,22 @@ function DdzRenderer() {
           >
             <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
               <button
+                type="button"
                 onClick={()=>setMatchMode('regular')}
                 aria-pressed={isRegularMode}
-                style={{
-                  padding:'6px 12px',
-                  borderRadius:8,
-                  border:'1px solid #d1d5db',
-                  background: isRegularMode ? '#2563eb' : '#fff',
-                  color: isRegularMode ? '#fff' : '#1f2937',
-                  cursor:'pointer',
-                  fontWeight:600,
-                }}
+                className={cx(
+                  styles.pillButton,
+                  isRegularMode ? styles.variantToggleActive : styles.variantToggleInactive,
+                )}
               >{regularLabel}</button>
               <button
+                type="button"
                 onClick={()=>setMatchMode('knockout')}
                 aria-pressed={!isRegularMode}
-                style={{
-                  padding:'6px 12px',
-                  borderRadius:8,
-                  border:'1px solid #d1d5db',
-                  background: !isRegularMode ? '#2563eb' : '#fff',
-                  color: !isRegularMode ? '#fff' : '#1f2937',
-                  cursor:'pointer',
-                  fontWeight:600,
-                }}
+                className={cx(
+                  styles.pillButton,
+                  !isRegularMode ? styles.variantToggleActive : styles.variantToggleInactive,
+                )}
               >{knockoutLabel}</button>
             </div>
           </div>
@@ -7601,7 +7533,11 @@ function DdzRenderer() {
                 启用对局
                 <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
               </label>
-              <button onClick={doResetAll} style={{ padding:'4px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}>
+              <button
+                type="button"
+                onClick={doResetAll}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
+              >
                 清空
               </button>
             </div>
@@ -7653,13 +7589,15 @@ function DdzRenderer() {
                   onChange={handleAllFileUpload}
                 />
                 <button
+                  type="button"
                   onClick={()=>allFileRef.current?.click()}
-                  style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                  className={cx(styles.pillButton, styles.variantGhost, styles.small)}
                 >上传</button>
               </label>
               <button
+                type="button"
                 onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
-                style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
               >存档</button>
             </div>
           </div>
