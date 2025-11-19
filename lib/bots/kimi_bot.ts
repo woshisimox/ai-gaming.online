@@ -59,6 +59,17 @@ const attachUsage = <T extends BotMove>(move: T, usage?: UsagePayload): T => {
   return move;
 };
 
+const LEGACY_KIMI_ALIAS = 'kimi-k2-0905-preview';
+
+function resolveKimiModel(input?: string): { model: string; aliased: boolean } {
+  const trimmed = (input || '').trim();
+  if (!trimmed) return { model: 'moonshot-v1-8k', aliased: false };
+  if (trimmed.toLowerCase() === LEGACY_KIMI_ALIAS) {
+    return { model: 'moonshot-v1-8k', aliased: true };
+  }
+  return { model: trimmed, aliased: false };
+}
+
 const isContentFilterError = (error: any): boolean => {
   const message = String(error?.message || error || '').toLowerCase();
   const body = typeof error?.body === 'string' ? error.body.toLowerCase() : '';
@@ -83,11 +94,12 @@ async function requestKimi(
   await throttle();
   const url = (o.baseUrl || 'https://api.moonshot.cn').replace(/\/$/, '') + '/v1/chat/completions';
   const { system, user } = buildDouPrompts(ctx, phase, mode);
+  const { model: resolvedModel, aliased } = resolveKimiModel(o.model);
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
-      model: o.model || 'moonshot-v1-8k',
+      model: resolvedModel,
       temperature: 0.2,
       messages: [
         { role: 'system', content: system },
@@ -106,12 +118,13 @@ async function requestKimi(
   const usage = parseUsage(j?.usage);
   const t = j?.choices?.[0]?.message?.content || '';
   const p: any = extractFirstJsonObject(String(t)) || {};
-  return { payload: p, usage };
+  return { payload: p, usage, aliased };
 }
 
 export const KimiBot = (o: { apiKey: string; model?: string; baseUrl?: string }): BotFunc => async (ctx: BotCtx) => {
   let flagged = false;
   let usedMode: PromptMode = 'normal';
+  let aliasWarning = false;
   try {
     if (!o.apiKey) throw new Error('Missing Kimi API Key');
     const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
@@ -126,6 +139,7 @@ export const KimiBot = (o: { apiKey: string; model?: string; baseUrl?: string })
       try {
         const r = await exec(mode);
         usedMode = mode;
+        if (r?.aliased) aliasWarning = true;
         result = r;
         break;
       } catch (err) {
@@ -170,10 +184,17 @@ export const KimiBot = (o: { apiKey: string; model?: string; baseUrl?: string })
       m === 'pass'
         ? { phase: 'play', move: 'pass', reason }
         : { phase: 'play', move: 'play', cards: cds, reason };
+    const warnings: string[] = [];
     if (flagged) {
-      const warn = usedMode === 'safe' ? 'content-filter-safe' : usedMode === 'minimal' ? 'content-filter-minimal' : 'content-filter-retry';
-      (move as any).warning = warn;
+      const warn = usedMode === 'safe'
+        ? 'content-filter-safe'
+        : usedMode === 'minimal'
+          ? 'content-filter-minimal'
+          : 'content-filter-retry';
+      warnings.push(warn);
     }
+    if (aliasWarning) warnings.push('kimi-model-alias');
+    if (warnings.length) (move as any).warning = warnings.join('+');
     return attachUsage(move as any, usage);
   } catch (e: any) {
     const message = e?.message || e;

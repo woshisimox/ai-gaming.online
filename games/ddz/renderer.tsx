@@ -4461,7 +4461,7 @@ function defaultModelFor(choice: BotChoice): string {
     case 'ai:openai': return 'gpt-4o-mini';
     case 'ai:gemini': return 'gemini-1.5-flash';
     case 'ai:grok':  return 'grok-2-latest';
-    case 'ai:kimi':  return 'kimi-k2-0905-preview';
+    case 'ai:kimi':  return 'moonshot-v1-8k';
     case 'ai:qwen':  return 'qwen-plus';
     case 'ai:deepseek': return 'deepseek-chat';
     default: return '';
@@ -4471,7 +4471,11 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
   const m = (input || '').trim(); if (!m) return '';
   const low = m.toLowerCase();
   switch (choice) {
-    case 'ai:kimi':   return /^kimi[-\w]*/.test(low) ? m : '';
+    case 'ai:kimi': {
+      if (/^moonshot[-\w]*/.test(low)) return m;
+      if (low === 'kimi-k2-0905-preview') return 'moonshot-v1-8k';
+      return /^kimi[-\w]*/.test(low) ? m : '';
+    }
     case 'ai:openai': return /^(gpt-|o[34]|text-|omni)/.test(low) ? m : '';
     case 'ai:gemini': return /^gemini[-\w.]*/.test(low) ? m : '';
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
@@ -5893,16 +5897,20 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
     const buildSeatSpecs = (): any[] => {
       return props.seats.slice(0,3).map((choice, i) => {
         const normalized = normalizeModelForProvider(choice, props.seatModels[i] || '');
-        const model = normalized || defaultModelFor(choice);
+        const model = (normalized || '').trim();
         const keys = props.seatKeys[i] || {};
+        const attachModel = <T extends { choice: BotChoice }>(spec: T): T => {
+          if (model) (spec as any).model = model;
+          return spec;
+        };
         switch (choice) {
-          case 'ai:openai':   return { choice, model, apiKey: keys.openai || '' };
-          case 'ai:gemini':   return { choice, model, apiKey: keys.gemini || '' };
-          case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
-          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '' };
-          case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
-          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '' };
-          case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
+          case 'ai:openai':   return attachModel({ choice, apiKey: keys.openai || '' });
+          case 'ai:gemini':   return attachModel({ choice, apiKey: keys.gemini || '' });
+          case 'ai:grok':     return attachModel({ choice, apiKey: keys.grok || '' });
+          case 'ai:kimi':     return attachModel({ choice, apiKey: keys.kimi || '' });
+          case 'ai:qwen':     return attachModel({ choice, apiKey: keys.qwen || '' });
+          case 'ai:deepseek': return attachModel({ choice, apiKey: keys.deepseek || '' });
+          case 'http':        return { choice, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
       });
@@ -8418,8 +8426,8 @@ const [lang, setLang] = useState<Lang>(() => {
                     onChange={e=>{
                       const v = e.target.value as BotChoice;
                       setSeats(arr => { const n=[...arr]; n[i] = v; return n; });
-                      // 新增：切换提供商时，把当前输入框改成该提供商的推荐模型
-                      setSeatModels(arr => { const n=[...arr]; n[i] = defaultModelFor(v); return n; });
+                      // 调整：切换提供商时清空输入，改为可选项
+                      setSeatModels(arr => { const n=[...arr]; n[i] = ''; return n; });
                     }}
                     style={{ width:'100%' }}
                   >
