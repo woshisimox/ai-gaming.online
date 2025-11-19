@@ -48,11 +48,26 @@ function makeBot(name: BotChoice, model: string|undefined, keybag: any): EngineB
     case 'built-in:greedy-min': return GreedyMin;
     case 'built-in:random-legal': return RandomLegal;
     case 'built-in:advanced-hybrid': return AdvancedHybrid;
-    case 'ai:openai': return OpenAIBot({ apiKey: k.openai||'', model: m||'gpt-4o-mini' });
-    case 'ai:gemini': return GeminiBot({ apiKey: k.gemini||'', model: m||'gemini-1.5-flash' });
-    case 'ai:grok':   return GrokBot({ apiKey: k.grok||'', model: m||'grok-2-latest' });
-    case 'ai:kimi':   return KimiBot({ apiKey: k.kimi||'', model: m||'moonshot-v1-8k' });
-    case 'ai:qwen':   return QwenBot({ apiKey: k.qwen||'', model: m||'qwen-plus' });
+    case 'ai:openai': {
+      if (!m) throw new Error('OpenAI 模型未配置');
+      return OpenAIBot({ apiKey: k.openai||'', model: m });
+    }
+    case 'ai:gemini': {
+      if (!m) throw new Error('Gemini 模型未配置');
+      return GeminiBot({ apiKey: k.gemini||'', model: m });
+    }
+    case 'ai:grok': {
+      if (!m) throw new Error('Grok 模型未配置');
+      return GrokBot({ apiKey: k.grok||'', model: m });
+    }
+    case 'ai:kimi': {
+      if (!m) throw new Error('Kimi 模型未配置');
+      return KimiBot({ apiKey: k.kimi||'', model: m });
+    }
+    case 'ai:qwen': {
+      if (!m) throw new Error('Qwen 模型未配置');
+      return QwenBot({ apiKey: k.qwen||'', model: m });
+    }
     case 'http': {
       const base = (k.httpBase||'').replace(/\/$/, '');
       return HttpBot({ base, token: k.httpToken||'' });
