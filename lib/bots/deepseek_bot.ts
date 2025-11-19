@@ -64,52 +64,85 @@ function classifyError(error: any): RetryKind | null {
   return null;
 }
 
+function normalizeBase(raw?: string): string | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function resolveDeepseekEndpoints(baseUrl?: string): string[] {
+  const override = normalizeBase(baseUrl);
+  if (override) {
+    if (/\/chat\/completions$/i.test(override)) {
+      return [override];
+    }
+    const hasVersionSuffix = /\/v\d[\w-]*$/i.test(override);
+    const version = hasVersionSuffix ? '' : '/v1';
+    return [`${override}${version}/chat/completions`];
+  }
+  return [
+    'https://api.deepseek.com/v1/chat/completions',
+    'https://api.deepseek.com/v1beta/chat/completions',
+  ];
+}
+
 async function requestDeepseek(
-  o: { apiKey: string; model?: string },
+  o: { apiKey: string; model?: string; baseUrl?: string },
   ctx: BotCtx,
   phase: 'bid' | 'double' | 'play',
   mode: PromptMode
 ) {
   await throttle();
-  const endpoint = 'https://api.deepseek.com/v1/chat/completions';
+  const endpoints = resolveDeepseekEndpoints(o.baseUrl);
   const { system, user } = buildDouPrompts(ctx, phase, mode);
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${o.apiKey}`
-    },
-    body: JSON.stringify({
-      model: (o.model && String(o.model).trim()) || 'deepseek-chat',
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user }
-      ],
-      stream: false
-    })
-  });
-  if (!resp.ok) {
-    const text = await resp.text();
-    const err: any = new Error(`HTTP ${resp.status} ${text.slice(0, 200)}`);
-    err.status = resp.status;
-    err.body = text;
-    throw err;
+  const model = (o.model && String(o.model).trim()) || '';
+  if (!model) throw new Error('Missing DeepSeek model name');
+  const body = {
+    model,
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user }
+    ],
+    stream: false
+  };
+  let lastErr: any;
+  for (const endpoint of endpoints) {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${o.apiKey}`
+      },
+      body: JSON.stringify(body)
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      lastErr = new Error(`HTTP ${resp.status} ${text.slice(0, 200)}`);
+      (lastErr as any).status = resp.status;
+      (lastErr as any).body = text;
+      if (resp.status === 404 && endpoint.includes('/v1/')) {
+        continue;
+      }
+      throw lastErr;
+    }
+    const j: any = await resp.json();
+    const txt = j?.choices?.[0]?.message?.content || '';
+    const parsed: any = extractFirstJsonObject(String(txt)) || {};
+    return { payload: parsed };
   }
-  const j: any = await resp.json();
-  const txt = j?.choices?.[0]?.message?.content || '';
-  const parsed: any = extractFirstJsonObject(String(txt)) || {};
-  return { payload: parsed };
+  throw lastErr || new Error('DeepSeek 请求失败');
 }
 
-export function DeepseekBot({ apiKey, model }: { apiKey?: string; model?: string }) {
+export function DeepseekBot({ apiKey, model, baseUrl }: { apiKey?: string; model?: string; baseUrl?: string }) {
   return async function bot(ctx: BotCtx): Promise<BotMove> {
     let flagged: RetryKind | null = null;
     let usedMode: PromptMode = 'normal';
     try {
       if (!apiKey) throw new Error('DeepSeek API key 未配置');
       const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
-      const exec = (mode: PromptMode) => requestDeepseek({ apiKey, model }, ctx, phase, mode);
+      const exec = (mode: PromptMode) => requestDeepseek({ apiKey, model, baseUrl }, ctx, phase, mode);
       const preferSafe = Date.now() < _riskModeUntil;
       const attempts: PromptMode[] = preferSafe ? ['safe', 'minimal'] : ['normal', 'safe', 'minimal'];
       let lastErr: any;

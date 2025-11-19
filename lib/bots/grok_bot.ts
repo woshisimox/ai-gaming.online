@@ -35,6 +35,8 @@ export const GrokBot = (o: { apiKey: string; model?: string }): BotFunc =>
   async (ctx: BotCtx) => {
     try {
       if (!o.apiKey) throw new Error('Missing xAI API Key');
+      const model = (o.model || '').trim();
+      if (!model) throw new Error('Missing Grok model name');
       const url = 'https://api.x.ai/v1/chat/completions';
       const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
       const attempts: PromptMode[] = ['normal', 'safe', 'minimal'];
@@ -46,7 +48,7 @@ export const GrokBot = (o: { apiKey: string; model?: string }): BotFunc =>
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
             body: JSON.stringify({
-              model: o.model || 'grok-2-latest',
+              model,
               temperature: 0.2,
               messages: [
                 { role: 'system', content: system },

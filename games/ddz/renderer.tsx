@@ -1,10 +1,51 @@
 // games/ddz/renderer.tsx
 import { createContext, forwardRef, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import DonationWidget from '../../components/DonationWidget';
+import { PlayerConfigPanel } from '../../components/game-modules/PlayerConfigPanel';
+import { LatencySummaryPanel } from '../../components/game-modules/LatencySummaryPanel';
+import styles from './renderer.module.css';
 import type { ChangeEvent, CSSProperties, ReactNode } from 'react';
 import type { PageSeoMeta } from '../../lib/seoConfig';
+import {
+  Rating,
+  TS_DEFAULT,
+  TS_BETA,
+  tsUpdateTwoTeams,
+  ensureRating,
+  createTrueSkillStore,
+  readTrueSkillStore,
+  writeTrueSkillStore,
+  importTrueSkillArchive,
+  formatTrueSkillArchiveName,
+  normalCdf,
+  type TrueSkillStore,
+  type TrueSkillStoreEntry,
+} from '../../lib/game-modules/trueSkill';
+import {
+  LatencyStore,
+  LatencyPlayerStats,
+  ensureLatencyPlayer,
+  ensureLatencyStore,
+  readLatencyStore,
+  writeLatencyStore,
+  updateLatencyStats,
+} from '../../lib/game-modules/latencyStore';
+import {
+  readPlayerConfigs,
+  writePlayerConfigs,
+  readConfigState,
+  writeConfigState,
+} from '../../lib/game-modules/playerConfigStore';
+import {
+  ensureMatchSummaryStore,
+  incrementMatchSummary,
+  readMatchSummaryStore,
+  writeMatchSummaryStore,
+  type MatchSummaryStore,
+} from '../../lib/game-modules/matchStatsStore';
+import { computeDdzTotalMatches, readDdzLadderPlayers } from '../../lib/game-modules/ddzLadder';
+import { readSiteLanguage, subscribeSiteLanguage, writeSiteLanguage, type SiteLanguage } from '../../lib/siteLanguage';
 /* ======= Minimal i18n (zh/en) injection: BEGIN ======= */
-type Lang = 'zh' | 'en';
+type Lang = SiteLanguage;
 const LangContext = createContext<Lang>('zh');
 const SeatInfoContext = createContext<string[] | null>(null);
 
@@ -198,622 +239,9 @@ const TRANSLATIONS: TransRule[] = [
 
   { zh: '关闭后不可开始/继续对局；再次勾选即可恢复。', en: 'Disabled matches cannot start/continue; tick again to restore.' },
 ];
+
+const cx = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' ');
 function hasChinese(s: string) { return /[\u4e00-\u9fff]/.test(s); }
-
-type DisclaimerSection = { title: string; paragraphs: string[] };
-
-const DISCLAIMER_CONTENT: Record<Lang, { title: string; sections: DisclaimerSection[] }> = {
-  en: {
-    title: 'AI Battle Platform (Fight the Landlord)',
-    sections: [
-      {
-        title: 'Scope',
-        paragraphs: [
-          'This compliance statement and terms of use apply to an AI battle website or app (the “Platform”) built around the Fight the Landlord card game. The Platform calls artificial-intelligence models from multiple providers to create bots that play the game, evaluate performance, and display leaderboards. The service is for research, testing and entertainment only. It does not offer gambling, lotteries or paid wagering and in no way encourages users to base real-world monetary transactions or decisions on match outcomes.',
-        ],
-      },
-      {
-        title: 'AI models & providers',
-        paragraphs: [
-          'The Platform uses AI models from third-party providers, including but not limited to OpenAI (e.g. gpt-4o-mini), Google (Gemini series), Anthropic (Claude series), Alibaba (Qwen series), Kimi, DeepSeek, Grok, and Platform-developed or open-source strategies such as Greedy Max, Greedy Min, Random Legal, MiniNet, AllySupport and others.',
-          'Model names appear in match settings and leaderboards solely to differentiate the origin of each algorithm. They do not imply sponsorship, endorsement or authorization by the model owners.',
-          'The Platform accesses these models under their respective providers’ terms of service and holds only a non-transferable right to use them. It does not own the models or have the right to sublicense them, and makes no warranty regarding the accuracy, legality or suitability of model outputs.',
-          'The Platform will not reproduce, redistribute or sell model outputs, nor use providers’ brand names for promotional purposes. Commercial use of model outputs requires separate authorization from the relevant provider.',
-        ],
-      },
-      {
-        title: 'Game rights',
-        paragraphs: [
-          'Fight the Landlord is a widely known card game whose rules and name may be subject to trademarks or copyrights held by third parties. The Platform implements the game according to common public rules for the sole purpose of demonstrating algorithms. No cooperation or licensing relationship exists between the Platform and any rights holder.',
-          'The user interface, charts and statistical displays are original works created by the Platform and are protected by copyright. No one may reproduce, modify or republish the Platform’s code, images, text or statistics for commercial purposes without written permission.',
-        ],
-      },
-      {
-        title: 'User-defined bots & HTTP API',
-        paragraphs: [
-          'The Platform may allow developers to upload or link custom bot code (for example via an HTTP API). All uploaded or linked code must comply with applicable laws and regulations and must not contain malware, trojans, crypto-mining scripts or any content infringing others’ rights.',
-          'The Platform assumes no responsibility for issues arising from user-supplied code, including intellectual-property disputes, illegal activity or damage caused by such code. Users must ensure they have the legal right to the code they provide and accept full liability for any resulting claims.',
-          'The Platform reserves the right to perform security checks on uploaded code. It may delete or block code deemed illegal or unsafe, and may report suspected violations to authorities.',
-        ],
-      },
-      {
-        title: 'User conduct rules',
-        paragraphs: [
-          'Users must comply with the laws and regulations of their jurisdiction. It is forbidden to use the Platform to spread illegal content, infringe intellectual property or privacy rights, or engage in betting, fraud, system attacks or other unlawful acts.',
-          'Users may not falsely claim that they represent the Platform or any provider, nor may they use the Platform’s or providers’ names to advertise, promote or solicit cooperation. Any implication of endorsement is strictly prohibited.',
-          'Users may not use Platform leaderboards, scores or match statistics for advertising, commercial ranking or misleading comparisons. Anyone quoting results must specify the data source and experimental conditions.',
-          'The Platform may temporarily or permanently restrict access for users who violate these rules, and reserves the right to pursue legal action.',
-        ],
-      },
-      {
-        title: 'Scoring & leaderboard disclaimer',
-        paragraphs: [
-          'The Platform displays scores, cumulative games, TrueSkill ratings, thinking-time statistics, strategy charts and other metrics. These reflect AI strategies or models under specific parameters and conditions only, and do not represent general performance of those models or any provider’s official evaluation.',
-          'AI performance will vary with model versions, API conditions and network factors, so results will differ over time. The Platform accepts no liability for the accuracy, timeliness or suitability of its statistics.',
-          'Individuals or organizations must not use leaderboard data for commercial rankings or advertising. If data are quoted, the source and conditions must be clearly identified.',
-        ],
-      },
-      {
-        title: 'Disclaimer',
-        paragraphs: [
-          'AI match results and analyses are for entertainment and research purposes only; they do not evaluate or recommend real human players, organizations or AI providers.',
-          'The Platform does not warrant the correctness, completeness or timeliness of all content. Users assume all risk and responsibility for using Platform content.',
-          'The Platform may link to third-party websites or APIs. Such links are provided for convenience and do not constitute endorsement. Visiting third-party sites is subject to their own terms of use and privacy policies.',
-        ],
-      },
-      {
-        title: 'Privacy & data handling',
-        paragraphs: [
-          'The Platform respects user privacy and processes personal data in accordance with applicable data-protection laws. Basic browsing does not require registration. Functions like uploading bot code or saving match logs may require registration information (nickname, email, etc.), collected only to provide services and improve user experience.',
-          'Reasonable technical and organizational measures are taken to protect data security. The Platform will not sell or disclose personal data without user consent except as required by law.',
-          'User-generated data may be analyzed for non-commercial research purposes without obtaining additional consent and will not be used for commercial exploitation.',
-          'Users may request deletion of their personal data or account at any time. The Platform will process such requests within a reasonable period while retaining necessary business records as permitted by law.',
-        ],
-      },
-      {
-        title: 'Governing law & dispute resolution',
-        paragraphs: [
-          'These terms are governed by the laws of the jurisdiction where the Platform operates. If any term conflicts with mandatory law, the latter prevails and the remaining provisions remain effective.',
-          'Disputes arising from use of the Platform shall first be resolved through amicable negotiation. If negotiation fails, the dispute shall be submitted to the competent court in the Platform’s place of operation.',
-        ],
-      },
-      {
-        title: 'Contact',
-        paragraphs: [
-          'If you have questions, complaints or suggestions regarding this statement or the Platform, please contact us:',
-          'Email: ai-gaming.online@outlook.com',
-          'We will respond and handle your request within a reasonable time.',
-        ],
-      },
-    ],
-  },
-  zh: {
-    title: 'AI 对战平台（斗地主）',
-    sections: [
-      {
-        title: '一、适用范围',
-        paragraphs: [
-          '本合规声明与使用条款适用于围绕“斗地主”纸牌游戏构建的 AI 对战网站或应用（以下简称“本平台”）。',
-          '本平台通过调用多个 AI 模型服务商的人工智能模型创建游戏机器人，用于游戏对战、性能评估和排行榜展示。',
-          '该服务仅用于科研、测试与娱乐目的。平台不提供赌博、抽奖或付费下注功能，且绝不鼓励用户基于比赛结果进行任何现实中的金钱交易或决策。',
-        ],
-      },
-      {
-        title: '二、AI 模型与服务提供方',
-        paragraphs: [
-          '本平台使用来自第三方提供商的人工智能模型，包括但不限于：OpenAI（如 gpt-4o-mini）、Google（Gemini 系列）、Anthropic（Claude 系列）、阿里巴巴（Qwen 系列）、Kimi、DeepSeek、Grok，以及平台自研或开源的策略算法，如 Greedy Max、Greedy Min、Random Legal、MiniNet、AllySupport 等。',
-          '模型名称在比赛设置与排行榜中仅用于区分算法来源，不代表该模型所有者的赞助、认可或授权。',
-          '平台根据各服务商的服务条款访问这些模型，仅享有不可转让的使用权。平台不拥有这些模型，也无权转授权，亦不对模型输出的准确性、合法性或适用性作出任何保证。',
-          '平台不会复制、再分发或销售模型输出内容，也不会将服务商品牌用于推广目的。任何商业化使用模型输出的行为均需获得相应服务商的独立授权。',
-        ],
-      },
-      {
-        title: '三、游戏版权',
-        paragraphs: [
-          '“斗地主”是一款广为人知的纸牌游戏，其规则或名称可能受第三方的商标或著作权保护。本平台仅基于公开通用的规则实现该游戏，用于算法演示与研究之目的。平台与任何版权持有人之间不存在合作或授权关系。',
-          '平台的用户界面、图表与统计展示均为原创作品，受著作权保护。未经书面许可，任何人不得将平台的代码、图片、文字或统计数据用于商业再发布、修改或再传播。',
-        ],
-      },
-      {
-        title: '四、用户自定义机器人与 HTTP API',
-        paragraphs: [
-          '平台可能允许开发者上传或链接自定义机器人代码（例如通过 HTTP API）。所有上传或链接的代码必须遵守相关法律法规，且不得包含恶意软件、木马、挖矿脚本或侵犯他人权益的内容。',
-          '平台对用户提交代码引发的任何问题不承担责任，包括但不限于知识产权纠纷、违法行为或由该代码造成的损害。用户应确保对所提供代码拥有合法使用权，并对因此产生的任何索赔承担全部责任。',
-          '平台保留对上传代码进行安全检查的权利。若发现代码涉嫌违法或不安全，平台有权删除、屏蔽并向有关部门报告。',
-        ],
-      },
-      {
-        title: '五、用户行为规范',
-        paragraphs: [
-          '用户必须遵守其所在司法辖区的法律法规。严禁利用平台传播非法内容、侵犯知识产权或隐私权、从事赌博、欺诈、系统攻击等违法行为。',
-          '用户不得冒充平台或任何服务商代表，也不得使用平台或服务商名称进行广告、推广或商业合作邀约。任何暗示平台或服务商背书的行为均被严格禁止。',
-          '用户不得将平台的排行榜、得分或比赛统计用于广告、商业排名或误导性比较。如需引用数据，必须明确标注数据来源及实验条件。',
-          '平台有权对违反规则的用户暂时或永久限制访问，并保留追究法律责任的权利。',
-        ],
-      },
-      {
-        title: '六、评分与排行榜免责声明',
-        paragraphs: [
-          '平台展示的分数、对局次数、TrueSkill 等级、思考时间统计、策略图表及其他指标，仅反映特定条件下 AI 策略或模型的表现，不代表模型或其提供商的整体性能或官方评估。',
-          'AI 表现会随模型版本、API 状况及网络因素而变化，结果随时间可能不同。平台不保证其统计结果的准确性、时效性或适用性。',
-          '任何个人或机构不得将排行榜数据用于商业排名或广告宣传。若引用数据，必须注明来源及实验条件。',
-        ],
-      },
-      {
-        title: '七、免责声明',
-        paragraphs: [
-          'AI 对战结果与分析仅供娱乐与研究使用，不用于评估或推荐任何真人玩家、机构或 AI 服务商。',
-          '平台不保证内容的正确性、完整性或时效性。用户使用平台内容的风险与责任均由其自行承担。',
-          '平台可能包含指向第三方网站或 API 的链接，这些链接仅为方便访问，不代表平台的认可或推荐。访问第三方网站应遵守其各自的使用条款与隐私政策。',
-        ],
-      },
-      {
-        title: '八、隐私与数据处理',
-        paragraphs: [
-          '平台尊重用户隐私，并依据适用的数据保护法律处理个人数据。基本浏览无需注册；若使用上传机器人代码或保存对局记录等功能，可能需要提供注册信息（如昵称、邮箱等），此类信息仅用于提供服务与提升用户体验。',
-          '平台采取合理的技术与组织措施保障数据安全。除法律要求外，平台不会在未经用户同意的情况下出售或披露个人数据。',
-          '用户产生的数据可用于非商业研究用途，无需事先征得用户同意，且不会用于商业化利用。',
-          '用户可随时请求删除其个人数据或账户，平台将在合理期限内处理该请求，同时保留法律允许范围内的必要业务记录。',
-        ],
-      },
-      {
-        title: '九、适用法律与争议解决',
-        paragraphs: [
-          '本条款受平台运营所在地法律管辖。若本条款与强制性法律相冲突，以强制性法律为准，其余条款仍保持有效。',
-          '因使用平台产生的争议，应首先通过友好协商解决；协商不成的，提交平台运营地有管辖权的法院处理。',
-        ],
-      },
-      {
-        title: '十、联系方式',
-        paragraphs: [
-          '如您对本声明或平台有任何疑问、投诉或建议，请联系：',
-          '邮箱：ai-gaming.online@outlook.com',
-          '平台将在合理时间内予以回复与处理。',
-        ],
-      },
-    ],
-  },
-};
-
-type DeveloperJoinListItem = string | { prefix?: string; text: string };
-type DeveloperJoinBlock =
-  | { kind: 'paragraph'; text: string }
-  | { kind: 'list'; title: string; items: DeveloperJoinListItem[] };
-
-type DeveloperJoinContent = {
-  title: string;
-  blocks: DeveloperJoinBlock[];
-};
-
-type BlogPost = {
-  id: string;
-  title: string;
-  date: string;
-  paragraphs: string[];
-  tags?: string[];
-};
-
-type BlogContent = {
-  title: string;
-  intro?: string[];
-  posts: BlogPost[];
-};
-
-type DiscordChannel = {
-  id: string;
-  name: string;
-  description: string;
-  link?: string;
-};
-
-type DiscordSection = {
-  heading: string;
-  items: DiscordChannel[];
-};
-
-type DiscordContent = {
-  title: string;
-  intro?: string[];
-  serverName: string;
-  inviteText: string;
-  inviteUrl: string;
-  inviteNote?: string;
-  sections: DiscordSection[];
-  footer?: string[];
-};
-
-const DEVELOPER_JOIN_CONTENT: Record<Lang, DeveloperJoinContent> = {
-  zh: {
-    title: '开发者加入',
-    blocks: [
-      {
-        kind: 'paragraph',
-        text: '平台愿景说明',
-      },
-      {
-        kind: 'paragraph',
-        text: 'By AI, For People',
-      },
-      {
-        kind: 'paragraph',
-        text:
-          '我们的核心目标是构建一个由 AI 自身驱动的多模型竞技与算法评测开放社区，涵盖斗地主、麻将等多类 AI 竞技项目。通过在平台中的博弈与对战，促进不同 AI 模型的协同进化与能力提升，以 AI 之力，造福人类。',
-      },
-      {
-        kind: 'paragraph',
-        text:
-          '我们鼓励开发者尽可能采用 Prompt 驱动 的方式，让各类 AI 模型自主完成代码编写、调试与对战，从而实现真正意义上的 “AI 以代码论高下” 的实验与交流。',
-      },
-      {
-        kind: 'paragraph',
-        text: '在提交或更新代码时，请注明所使用的 AI 工具或模型，以便社区共同了解不同模型的表现与特性。',
-      },
-      {
-        kind: 'paragraph',
-        text: '当前平台的基础版本由作者通过 Codex 编写实现。受限于个人能力与实现范围，现有版本并不代表 Codex 的全部潜力。',
-      },
-      {
-        kind: 'paragraph',
-        text: '我们诚挚欢迎更多开发者使用不同的 AI 工具参与，共同完善和拓展这一开放的 AI 对战与评测生态。',
-      },
-      {
-        kind: 'list',
-        title: '🔗 项目托管',
-        items: [
-          { prefix: 'GitHub 仓库：', text: 'https://github.com/woshisimox/Fight-the-Landlord' },
-          '部署平台： Vercel',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '👩‍💻 如何参与',
-        items: [
-          'Fork 仓库，创建分支后提交 Pull Request',
-          '参与前可查看 README.md、CONTRIBUTING.md 与 issues',
-          '欢迎提交：',
-          '· 新算法 / AI 接口适配',
-          '· UI/UX 优化',
-          '· TrueSkill / Ladder 评分改进',
-          '· 调试、日志与对战回放模块',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '💬 交流与支持',
-        items: [
-          '提交 Issue 或 Discussion',
-          '可通过 GitHub 联系维护者：@woshisimox',
-          { prefix: '或通过邮件联系：', text: 'ai-gaming.online@outlook.com' },
-        ],
-      },
-      {
-        kind: 'list',
-        title: '🧠 当前技术栈',
-        items: [
-          '前端：Next.js + TypeScript + TailwindCSS',
-          '后端：Node.js（Vercel Serverless）',
-          '数据存储：本地 JSON / GitHub Pages 同步（后续支持 Cloud DB）',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '📜 许可协议',
-        items: [
-          '代码采用 MIT License 开源',
-          '欢迎任何形式的学习、改进与二次开发，但请保留署名',
-        ],
-      },
-    ],
-  },
-  en: {
-    title: 'Join as a Developer',
-    blocks: [
-      {
-        kind: 'paragraph',
-        text: 'Platform Vision Statement',
-      },
-      {
-        kind: 'paragraph',
-        text: 'By AI, For People.',
-      },
-      {
-        kind: 'paragraph',
-        text:
-          "Our core goal is to build an AI-driven open community for multi-model competitions and algorithm evaluation, covering AI gaming projects such as Fight the Landlord and Mahjong. Through strategic matchups and battles on the platform, we aim to foster collaborative evolution and capability growth across different AI models so that AI advancements benefit humanity.",
-      },
-      {
-        kind: 'paragraph',
-        text:
-          'We encourage developers to adopt prompt-driven workflows so that diverse AI models can independently handle coding, debugging, and matches, enabling truly “AI proves itself through code” experimentation and exchange.',
-      },
-      {
-        kind: 'paragraph',
-        text: 'When submitting or updating code, please note the AI tools or models you used so the community can understand each model’s performance and characteristics.',
-      },
-      {
-        kind: 'paragraph',
-        text: 'The foundational version of this platform was implemented by the maintainer using Codex. Due to individual limitations, the current build does not represent the full potential of Codex.',
-      },
-      {
-        kind: 'paragraph',
-        text: 'We warmly welcome more developers to participate with diverse AI tools and help refine and expand this open ecosystem for AI battles and evaluation.',
-      },
-      {
-        kind: 'list',
-        title: '🔗 Project Hosting',
-        items: [
-          { prefix: 'GitHub Repository:', text: 'https://github.com/woshisimox/Fight-the-Landlord' },
-          'Deployment Platform: Vercel',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '👩‍💻 How to Participate',
-        items: [
-          'Fork the repository, create a branch, and submit a Pull Request.',
-          'Review README.md, CONTRIBUTING.md, and issues before contributing.',
-          'We welcome submissions including:',
-          '· New algorithms / AI interface integrations',
-          '· UI/UX improvements',
-          '· TrueSkill / ladder scoring enhancements',
-          '· Debugging, logging, and match replay modules',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '💬 Communication & Support',
-        items: [
-          'Open an Issue or Discussion',
-          'Reach the maintainer on GitHub: @woshisimox',
-          { prefix: 'Contact via email:', text: 'ai-gaming.online@outlook.com' },
-        ],
-      },
-      {
-        kind: 'list',
-        title: '🧠 Current Tech Stack',
-        items: [
-          'Frontend: Next.js + TypeScript + TailwindCSS',
-          'Backend: Node.js (Vercel Serverless)',
-          'Data Storage: Local JSON / GitHub Pages sync (Cloud DB support coming later)',
-        ],
-      },
-      {
-        kind: 'list',
-        title: '📜 License',
-        items: [
-          'Code released under the MIT License',
-          'Feel free to learn, improve, or build upon it—please keep attribution.',
-        ],
-      },
-    ],
-  },
-};
-
-const BLOG_CONTENT: Record<Lang, BlogContent> = {
-  zh: {
-    title: '平台博客',
-    intro: [
-      '欢迎来到 AI Battle Platform 的开发日志。在这里我们会分享平台演进的重点规划、近期里程碑，以及 AI 对战社区正在探索的新方向。',
-    ],
-    posts: [
-      {
-        id: 'vision-and-roadmap',
-        title: 'AI Battle Platform 愿景与路线图快照',
-        date: '2025-10-01',
-        paragraphs: [
-          'AI Battle Platform（ai-gaming.online）正在持续扩展斗地主、麻将等博弈项目的 AI 竞技能力。我们致力于打造一个“By AI, For People”的开放实验场，支持开发者使用提示词驱动的方式，让各类模型在真实牌局中持续迭代。',
-          '近期我们重点完成了对赛后日志的邮件分发能力、基础 SEO 与 sitemap 构建，并持续优化 TrueSkill / Ladder 指标的可视化体验。接下来我们会逐步引入更多 AI 适配接口与回放工具，欢迎关注 GitHub 仓库 https://github.com/woshisimox/Fight-the-Landlord 并参与讨论。',
-        ],
-        tags: ['愿景', '路线图', '平台更新'],
-      },
-      {
-        id: 'community-call',
-        title: '社区征集：共建 AI 对战生态',
-        date: '2025-10-07',
-        paragraphs: [
-          '我们正在招募更多开发者与研究者，一起完善斗地主、麻将等项目的 AI 对战体验。无论你专注于提示词工程、算法策略，还是 UI/UX、日志回放模块，都可以通过 Pull Request 与 Issue 分享你的想法。',
-          '平台欢迎所有遵循 MIT License 的贡献者加入。提交代码时记得注明所使用的 AI 工具或模型，如果需要帮助，可通过 GitHub Issue 或邮箱 ai-gaming.online@outlook.com 联系维护者。',
-        ],
-        tags: ['社区', '贡献指南'],
-      },
-    ],
-  },
-  en: {
-    title: 'AI Battle Platform Blog',
-    intro: [
-      'Welcome to the AI Battle Platform development blog. This space highlights our product vision, release milestones, and experiments around competitive AI gameplay.',
-    ],
-    posts: [
-      {
-        id: 'vision-and-roadmap',
-        title: 'Vision & Roadmap Highlights',
-        date: '2025-10-01',
-        paragraphs: [
-          'AI Battle Platform (ai-gaming.online) keeps expanding support for Fight the Landlord, Mahjong, and other competitive AI scenes. Our “By AI, For People” mission invites developers to drive code with prompts so models can iteratively improve through real matches.',
-          'Recently we launched automated log delivery via email, baseline SEO metadata, and a sitemap endpoint while polishing TrueSkill / ladder visualizations. Next up we are investing in broader AI integrations and replay tooling—follow the GitHub repo https://github.com/woshisimox/Fight-the-Landlord and join the conversation.',
-        ],
-        tags: ['vision', 'roadmap', 'release'],
-      },
-      {
-        id: 'community-call',
-        title: 'Community Call for Contributors',
-        date: '2025-10-07',
-        paragraphs: [
-          'We are onboarding more developers and researchers to elevate the AI match experience across Fight the Landlord, Mahjong, and future titles. Whether you focus on prompt engineering, algorithm design, UI/UX, or replay and logging modules, we would love to review your Pull Requests and ideas.',
-          'Contributions are welcome under the MIT License. Please credit the AI tools or models used in your submissions, and reach out via GitHub issues or email ai-gaming.online@outlook.com if you need support.',
-        ],
-        tags: ['community', 'contribution'],
-      },
-    ],
-  },
-};
-
-const DISCORD_INVITE_EMAIL = 'ai-gaming.online@outlook.com';
-const DISCORD_FALLBACK_MAIL_SUBJECT = encodeURIComponent('Discord Invite Request');
-const DISCORD_FALLBACK_MAIL_URL = `mailto:${DISCORD_INVITE_EMAIL}?subject=${DISCORD_FALLBACK_MAIL_SUBJECT}`;
-const DEFAULT_DISCORD_INVITE_URL = 'https://discord.gg/DCjqVfhk';
-const DISCORD_DIRECT_INVITE_URL = (
-  process.env.NEXT_PUBLIC_DISCORD_INVITE_URL ?? DEFAULT_DISCORD_INVITE_URL
-).trim();
-const HAS_DIRECT_DISCORD_INVITE = DISCORD_DIRECT_INVITE_URL.length > 0;
-const RESOLVED_DISCORD_INVITE_URL = HAS_DIRECT_DISCORD_INVITE
-  ? DISCORD_DIRECT_INVITE_URL
-  : DISCORD_FALLBACK_MAIL_URL;
-
-const DISCORD_CONTENT: Record<Lang, DiscordContent> = {
-  zh: {
-    title: 'Discord 实时社区',
-    intro: [
-      'ai-gaming.online 的 Discord 服务器汇集了开发者、AI 选手与平台维护者，是托管赛程规划、训练日志与实时公告的核心阵地。',
-      '加入后即可第一时间获得平台更新、玩法讨论以及 Prompt 协作案例，参与社区驱动的 AI 竞技生态建设。',
-    ],
-    serverName: 'ai-gaming.online Discord Server',
-    inviteText: HAS_DIRECT_DISCORD_INVITE
-      ? `立即加入服务器： ${RESOLVED_DISCORD_INVITE_URL}`
-      : `点击下方按钮邮件联系 ${DISCORD_INVITE_EMAIL} 获取最新的 Discord 邀请链接。`,
-    inviteUrl: RESOLVED_DISCORD_INVITE_URL,
-    inviteNote: HAS_DIRECT_DISCORD_INVITE
-      ? `提示：如遇到链接失效，可通过邮箱 ${DISCORD_INVITE_EMAIL} 获取最新邀请。`
-      : '提示：当前公开邀请链接暂不可用，我们会尽快更新。发送邮件后即可收到最新加入方式。',
-    sections: [
-      {
-        heading: '📣 核心频道',
-        items: [
-          {
-            id: 'announcements',
-            name: '#announcements',
-            description: '发布平台公告、版本更新、维护安排与赛事日程。',
-          },
-          {
-            id: 'release-feed',
-            name: '#release-feed',
-            description: '自动同步 GitHub Release、部署进展及关键里程碑。',
-          },
-          {
-            id: 'match-log',
-            name: '#match-log',
-            description: '备份重点赛事的运行日志与赛果，便于回溯与分析。',
-          },
-        ],
-      },
-      {
-        heading: '🤝 协作专区',
-        items: [
-          {
-            id: 'prompt-lab',
-            name: '#prompt-lab',
-            description: '分享提示词工程经验与模型调试案例，协同打磨 AI 策略。',
-          },
-          {
-            id: 'bot-integration',
-            name: '#bot-integration',
-            description: '讨论 API 对接、SDK 使用以及多语言客户端适配方案。',
-          },
-          {
-            id: 'matchmaking',
-            name: '#matchmaking',
-            description: '预约训练赛 / 表演赛，协调不同模型的对战排期。',
-          },
-        ],
-      },
-      {
-        heading: '📚 资料与回放',
-        items: [
-          {
-            id: 'resource-library',
-            name: '#resource-library',
-            description: '集中整理平台文档、API 参考与 TrueSkill 评分相关资料。',
-          },
-          {
-            id: 'replay-studio',
-            name: '#replay-studio',
-            description: '上传或查阅经典对局的回放，分析模型策略优劣。',
-          },
-        ],
-      },
-    ],
-    footer: [
-      '社区遵循 MIT License 精神，欢迎在频道内分享 AI 相关研究、插件与可复现案例。',
-      '请遵守服务器规则，尊重每位参与者，并保持技术讨论的专业与友好。',
-    ],
-  },
-  en: {
-    title: 'Discord Community Hub',
-    intro: [
-      'The ai-gaming.online Discord server brings together developers, AI competitors, and maintainers. It hosts our schedules, training logs, and real-time announcements.',
-      'Join to receive instant platform updates, dive into gameplay discussions, and collaborate on prompt-driven experiments that power the AI battle ecosystem.',
-    ],
-    serverName: 'ai-gaming.online Discord Server',
-    inviteText: HAS_DIRECT_DISCORD_INVITE
-      ? `Join the server now: ${RESOLVED_DISCORD_INVITE_URL}`
-      : `Tap the button below to email ${DISCORD_INVITE_EMAIL} for the latest Discord invite link.`,
-    inviteUrl: RESOLVED_DISCORD_INVITE_URL,
-    inviteNote: HAS_DIRECT_DISCORD_INVITE
-      ? `Tip: If the invite expires, reach out via ${DISCORD_INVITE_EMAIL} for the latest link.`
-      : `Tip: The public invite is currently offline. Email ${DISCORD_INVITE_EMAIL} and we will share the most recent access link shortly.`,
-    sections: [
-      {
-        heading: '📣 Key Channels',
-        items: [
-          {
-            id: 'announcements',
-            name: '#announcements',
-            description: 'Official announcements, release notes, maintenance windows, and event schedules.',
-          },
-          {
-            id: 'release-feed',
-            name: '#release-feed',
-            description: 'Automated feed that mirrors GitHub releases, deployment progress, and milestone callouts.',
-          },
-          {
-            id: 'match-log',
-            name: '#match-log',
-            description: 'Mirror of highlighted match logs and results for quick review and auditing.',
-          },
-        ],
-      },
-      {
-        heading: '🤝 Collaboration Zones',
-        items: [
-          {
-            id: 'prompt-lab',
-            name: '#prompt-lab',
-            description: 'Share prompt engineering techniques and debugging cases to refine AI strategies together.',
-          },
-          {
-            id: 'bot-integration',
-            name: '#bot-integration',
-            description: 'Discuss API integrations, SDK usage, and adapting clients across languages.',
-          },
-          {
-            id: 'matchmaking',
-            name: '#matchmaking',
-            description: 'Arrange scrimmages or showcase matches and coordinate cross-model battles.',
-          },
-        ],
-      },
-      {
-        heading: '📚 Knowledge & Replays',
-        items: [
-          {
-            id: 'resource-library',
-            name: '#resource-library',
-            description: 'Centralized references for docs, API guides, and TrueSkill / ladder methodology.',
-          },
-          {
-            id: 'replay-studio',
-            name: '#replay-studio',
-            description: 'Upload or review standout match replays to analyze model strengths and weaknesses.',
-          },
-        ],
-      },
-    ],
-    footer: [
-      'The community embraces the MIT License spirit—share AI research, plugins, and reproducible case studies freely.',
-      'Please follow the server rules, respect fellow contributors, and keep discussions constructive and technical.',
-    ],
-  },
-};
 
 let cachedCreatePortal: ((children: ReactNode, container: Element | DocumentFragment) => ReactNode) | null = null;
 const renderViaPortal = (children: ReactNode, container: HTMLElement | null): ReactNode => {
@@ -847,40 +275,6 @@ function translateTextLiteral(s: string): string {
     }
   }
   return out;
-}
-
-const developerLinkStyle: CSSProperties = { color:'#2563eb', textDecoration:'underline', wordBreak:'break-all' };
-
-function renderRichText(text: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const linkRegex = /(https?:\/\/[^\s]+|[\w.+-]+@[\w.-]+\.[\w.-]+)/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = linkRegex.exec(text)) !== null) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
-      nodes.push(text.slice(lastIndex, index));
-    }
-    const value = match[0];
-    if (value.includes('@') && !value.startsWith('http')) {
-      nodes.push(
-        <a key={`mail-${value}-${index}`} href={`mailto:${value}`} style={developerLinkStyle}>
-          {value}
-        </a>,
-      );
-    } else {
-      nodes.push(
-        <a key={`link-${value}-${index}`} href={value} target="_blank" rel="noreferrer" style={developerLinkStyle}>
-          {value}
-        </a>,
-      );
-    }
-    lastIndex = linkRegex.lastIndex;
-  }
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-  return nodes;
 }
 
 function autoTranslateContainer(root: HTMLElement | null, lang: Lang) {
@@ -960,6 +354,8 @@ if (typeof document !== 'undefined' && !document.body.hasAttribute('data-i18n-cl
 
 
 type Four2Policy = 'both' | '2singles' | '2pairs';
+type SplitStrategy = 'balanced' | 'aggressive' | 'defensive';
+type CoopMetric = 'sync' | 'tempo' | 'support';
 type BotChoice =
   | 'built-in:greedy-max'
   | 'built-in:greedy-min'
@@ -971,36 +367,6 @@ type BotChoice =
   | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
   | 'http'
   | 'human';
-
-/* ========= TrueSkill（前端轻量实现，1v2：地主 vs 两农民） ========= */
-type Rating = { mu:number; sigma:number };
-const TS_DEFAULT: Rating = { mu:25, sigma:25/3 };
-const TS_BETA = 25/6;
-const TS_TAU  = 25/300;
-const SQRT2 = Math.sqrt(2);
-function erf(x:number){ const s=Math.sign(x); const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911; const t=1/(1+p*Math.abs(x)); const y=1-(((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t)*Math.exp(-x*x); return s*y; }
-function phi(x:number){ return Math.exp(-0.5*x*x)/Math.sqrt(2*Math.PI); }
-function Phi(x:number){ return 0.5*(1+erf(x/SQRT2)); }
-function V_exceeds(t:number){ const d=Math.max(1e-12,Phi(t)); return phi(t)/d; }
-function W_exceeds(t:number){ const v=V_exceeds(t); return v*(v+t); }
-function tsUpdateTwoTeams(r:Rating[], teamA:number[], teamB:number[]){
-  const varA = teamA.reduce((s,i)=>s+r[i].sigma**2,0), varB = teamB.reduce((s,i)=>s+r[i].sigma**2,0);
-  const muA  = teamA.reduce((s,i)=>s+r[i].mu,0),     muB  = teamB.reduce((s,i)=>s+r[i].mu,0);
-  const c2   = varA + varB + 2*TS_BETA*TS_BETA;
-  const c    = Math.sqrt(c2);
-  const t    = (muA - muB) / c;
-  const v = V_exceeds(t), w = W_exceeds(t);
-  for (const i of teamA) {
-    const sig2=r[i].sigma**2, mult=sig2/c, mult2=sig2/c2;
-    r[i].mu += mult*v;
-    r[i].sigma = Math.sqrt(Math.max(1e-6, sig2*(1 - w*mult2)) + TS_TAU*TS_TAU);
-  }
-  for (const i of teamB) {
-    const sig2=r[i].sigma**2, mult=sig2/c, mult2=sig2/c2;
-    r[i].mu -= mult*v;
-    r[i].sigma = Math.sqrt(Math.max(1e-6, sig2*(1 - w*mult2)) + TS_TAU*TS_TAU);
-  }
-}
 
 const KO_BYE = '__KO_BYE__';
 type KnockoutPlayer = string | null;
@@ -1026,6 +392,7 @@ type BotCredentials = {
   kimi?: string;
   qwen?: string;
   deepseek?: string;
+  deepseekBase?: string;
   httpBase?: string;
   httpToken?: string;
 };
@@ -1152,6 +519,16 @@ function makeDefaultKnockoutEntries(): KnockoutEntry[] {
   return entries;
 }
 
+function readProviderBase(choice: BotChoice, keys?: BotCredentials | null): string {
+  if (choice === 'http') {
+    return (keys?.httpBase || '').trim();
+  }
+  if (choice === 'ai:deepseek') {
+    return (keys?.deepseekBase || '').trim();
+  }
+  return '';
+}
+
 function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   const base: BotCredentials = typeof raw === 'object' && raw ? raw : {};
   const out: BotCredentials = {};
@@ -1161,11 +538,15 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   if (typeof base.kimi === 'string') out.kimi = base.kimi;
   if (typeof base.qwen === 'string') out.qwen = base.qwen;
   if (typeof base.deepseek === 'string') out.deepseek = base.deepseek;
+  if (typeof base.deepseekBase === 'string') out.deepseekBase = base.deepseekBase;
   if (typeof base.httpBase === 'string') out.httpBase = base.httpBase;
   if (typeof base.httpToken === 'string') out.httpToken = base.httpToken;
   if (choice === 'http') {
     if (out.httpBase === undefined) out.httpBase = '';
     if (out.httpToken === undefined) out.httpToken = '';
+  }
+  if (choice === 'ai:deepseek') {
+    if (out.deepseekBase === undefined) out.deepseekBase = '';
   }
   return out;
 }
@@ -1175,17 +556,25 @@ function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
     const base = typeof raw?.httpBase === 'string' ? raw.httpBase : '';
     return base ? { httpBase: base } : {};
   }
+  if (choice === 'ai:deepseek') {
+    const base = typeof raw?.deepseekBase === 'string' ? raw.deepseekBase : '';
+    return base ? { deepseekBase: base } : {};
+  }
   return {};
 }
 
 function persistableKnockoutEntry(entry: KnockoutEntry) {
   const { keys, ...rest } = entry;
+  const safe: BotCredentials = {};
   if (entry.choice === 'http') {
     const base = typeof keys?.httpBase === 'string' ? keys.httpBase.trim() : '';
-    const safe: BotCredentials = {};
     if (base) safe.httpBase = base;
-    if (Object.keys(safe).length) return { ...rest, keys: safe };
-    return rest;
+  } else if (entry.choice === 'ai:deepseek') {
+    const base = typeof keys?.deepseekBase === 'string' ? keys.deepseekBase.trim() : '';
+    if (base) safe.deepseekBase = base;
+  }
+  if (Object.keys(safe).length) {
+    return { ...rest, keys: safe };
   }
   return rest;
 }
@@ -1417,36 +806,14 @@ function findNextPlayableMatch(rounds: KnockoutRound[]): { roundIdx: number; mat
 
 /* ===== TrueSkill 本地存档（新增） ===== */
 type TsRole = 'landlord'|'farmer';
-type TsStoreEntry = {
-  id: string;                 // 身份（详见 seatIdentity）
-  label?: string;
-  overall?: Rating | null;    // 总体
-  roles?: {                   // 角色分档
-    landlord?: Rating | null;
-    farmer?: Rating | null;
-  };
-  meta?: { choice?: string; model?: string; httpBase?: string };
-};
-type TsStore = {
-  schema: 'ddz-trueskill@1';
-  updatedAt: string;
-  players: Record<string, TsStoreEntry>;
-};
+type TsStoreEntry = TrueSkillStoreEntry;
+type TsStore = TrueSkillStore;
+const TS_STORE_SCHEMA = 'ddz-trueskill@1';
 const TS_STORE_KEY = 'ddz_ts_store_v1';
 
-const ensureRating = (x:any): Rating => {
-  const mu = Number(x?.mu), sigma = Number(x?.sigma);
-  if (Number.isFinite(mu) && Number.isFinite(sigma)) return { mu, sigma };
-  return { ...TS_DEFAULT };
-};
-const emptyStore = (): TsStore => ({ schema:'ddz-trueskill@1', updatedAt:new Date().toISOString(), players:{} });
-const readStore = (): TsStore => {
-  try { const raw = localStorage.getItem(TS_STORE_KEY); if (!raw) return emptyStore();
-    const j = JSON.parse(raw); if (j?.schema && j?.players) return j as TsStore;
-  } catch {}
-  return emptyStore();
-};
-const writeStore = (s: TsStore) => { try { s.updatedAt=new Date().toISOString(); localStorage.setItem(TS_STORE_KEY, JSON.stringify(s)); } catch {} };
+const emptyStore = (): TsStore => createTrueSkillStore(TS_STORE_SCHEMA);
+const readStore = (): TsStore => readTrueSkillStore(TS_STORE_KEY, TS_STORE_SCHEMA);
+const writeStore = (s: TsStore) => writeTrueSkillStore(TS_STORE_KEY, s);
 
 /* ====== 其它 UI/逻辑 ====== */
 type LiveProps = {
@@ -1461,7 +828,7 @@ type LiveProps = {
   seats: BotChoice[];
   seatModels: string[];
   seatKeys: {
-    openai?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string;
+    openai?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string; deepseekBase?: string;
     httpBase?: string; httpToken?: string;
   }[];
   farmerCoop: boolean;
@@ -1512,6 +879,8 @@ const LOG_DELIVERY_ENDPOINT = ((process.env.NEXT_PUBLIC_LOG_DELIVERY_ENDPOINT ??
   || '/api/deliver_logs';
 const LOG_DELIVERY_MAX_ATTEMPTS = 3;
 const LOG_DELIVERY_RETRY_DELAY_MS = 2000;
+const MATCH_STATS_KEY = 'ddz_match_stats_v1';
+const MATCH_STATS_SCHEMA = 'ddz-match-stats@1';
 
 async function postRunLogDelivery(payload: RunLogDeliveryPayload, attempt = 1): Promise<void> {
   if (typeof window === 'undefined' || typeof fetch !== 'function') return;
@@ -2175,14 +1544,14 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
     ? { width: 28, height: 44, gap: 2, backSize: 18, suitSize: 16, rankSize: 12, paddingShown: '6px 4px', paddingHidden: '4px' }
     : { width: 38, height: 58, gap: 4, backSize: 24, suitSize: 22, rankSize: 16, paddingShown: '8px 6px', paddingHidden: '6px' };
 
-  let background = '#fff';
+  let backgroundColor = '#fff';
   let borderColor = '#ddd';
   let color = '#1f2937';
   let opacity = 1;
   let inner: ReactNode;
 
   if (hidden) {
-    background = selected ? '#bfdbfe' : '#1f2937';
+    backgroundColor = selected ? '#bfdbfe' : '#1f2937';
     borderColor = selected ? '#2563eb' : '#111827';
     color = '#f9fafb';
     inner = <span style={{ fontSize: dims.backSize, lineHeight: 1 }}>🂠</span>;
@@ -2206,7 +1575,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
       fontSize: dims.suitSize,
       lineHeight: 1,
     };
-    background = selected ? '#dbeafe' : (dimmed ? '#f3f4f6' : '#fff');
+    backgroundColor = selected ? '#dbeafe' : (dimmed ? '#f3f4f6' : '#fff');
     borderColor = selected ? '#2563eb' : (dimmed ? '#d1d5db' : '#ddd');
     color = suitColor;
     opacity = dimmed ? 0.65 : 1;
@@ -2217,6 +1586,11 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
       </>
     );
   }
+
+  const classNames = [styles.cardBase];
+  if (interactive) classNames.push(styles.cardInteractive);
+  if (selected) classNames.push(styles.cardSelected);
+  if (hidden) classNames.push(styles.cardHidden);
 
   const style: React.CSSProperties = {
     display: 'inline-flex',
@@ -2238,7 +1612,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
     minWidth: dims.width,
     height: dims.height,
     boxSizing: 'border-box',
-    background,
+    backgroundColor,
     borderColor,
     color,
     opacity,
@@ -2251,6 +1625,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
         onClick={disabled ? undefined : onClick}
         disabled={disabled}
         style={style}
+        className={classNames.join(' ')}
         title={hidden ? label : undefined}
       >
         {inner}
@@ -2259,7 +1634,7 @@ function Card({ label, dimmed = false, compact = false, interactive = false, sel
   }
 
   return (
-    <span style={style} title={hidden ? label : undefined}>
+    <span style={style} className={classNames.join(' ')} title={hidden ? label : undefined}>
       {inner}
     </span>
   );
@@ -2323,57 +1698,16 @@ function LogLine({ text }: { text:string }) {
 }
 
 /* ===== 思考耗时（thoughtMs）累计均值存档 ===== */
-type ThoughtPlayerStats = { mean:number; count:number; label?:string };
-type ThoughtStore = { schema:'ddz-latency@3'; updatedAt:string; players:Record<string, ThoughtPlayerStats> };
+type ThoughtPlayerStats = LatencyPlayerStats;
+type ThoughtStore = LatencyStore;
+const THOUGHT_SCHEMA = 'ddz-latency@3';
 const THOUGHT_KEY = 'ddz_latency_store_v1';
-const THOUGHT_EMPTY: ThoughtStore = { schema:'ddz-latency@3', updatedAt:new Date().toISOString(), players:{} };
+const THOUGHT_EMPTY: ThoughtStore = ensureLatencyStore({ schema: THOUGHT_SCHEMA, players: {} }, THOUGHT_SCHEMA);
 
-const ensurePlayerStats = (raw:any): ThoughtPlayerStats => {
-  const meanRaw = Number(raw?.mean);
-  const countRaw = Number(raw?.count);
-  const labelRaw = typeof raw?.label === 'string' ? raw.label : undefined;
-  const label = labelRaw ? labelRaw.slice(0, 160) : undefined;
-  return {
-    mean: Number.isFinite(meanRaw) ? meanRaw : 0,
-    count: Number.isFinite(countRaw) && countRaw >= 0 ? countRaw : 0,
-    ...(label ? { label } : {}),
-  };
-};
-
-function ensureThoughtStore(raw: any): ThoughtStore {
-  const updatedAt = typeof raw?.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString();
-  if (raw?.schema === 'ddz-latency@3' && raw?.players && typeof raw.players === 'object') {
-    const players: Record<string, ThoughtPlayerStats> = {};
-    for (const key of Object.keys(raw.players)) {
-      players[key] = ensurePlayerStats(raw.players[key]);
-    }
-    return { schema:'ddz-latency@3', updatedAt, players };
-  }
-  // 旧版（按座位）数据无法映射至具体身份，避免误导直接清空
-  return { schema:'ddz-latency@3', updatedAt, players:{} };
-}
-
-function readThoughtStore(): ThoughtStore {
-  if (typeof window === 'undefined') {
-    return { ...THOUGHT_EMPTY, updatedAt: new Date().toISOString(), players:{} };
-  }
-  try {
-    const raw = localStorage.getItem(THOUGHT_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return ensureThoughtStore(parsed);
-    }
-  } catch {}
-  return { ...THOUGHT_EMPTY, updatedAt: new Date().toISOString(), players:{} };
-}
-
-function writeThoughtStore(store: ThoughtStore): ThoughtStore {
-  const base: ThoughtStore = ensureThoughtStore(store);
-  if (typeof window === 'undefined') return { ...base, updatedAt: new Date().toISOString() };
-  const next = { ...base, updatedAt: new Date().toISOString() };
-  try { localStorage.setItem(THOUGHT_KEY, JSON.stringify(next)); } catch {}
-  return next;
-}
+const ensurePlayerStats = (raw:any): ThoughtPlayerStats => ensureLatencyPlayer(raw);
+const ensureThoughtStore = (raw:any): ThoughtStore => ensureLatencyStore(raw, THOUGHT_SCHEMA);
+const readThoughtStore = (): ThoughtStore => readLatencyStore(THOUGHT_KEY, THOUGHT_SCHEMA);
+const writeThoughtStore = (store: ThoughtStore): ThoughtStore => writeLatencyStore(THOUGHT_KEY, store);
 
 const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
   'built-in:greedy-max','built-in:greedy-min','built-in:random-legal','built-in:mininet','built-in:ally-support','built-in:endgame-rush','built-in:advanced-hybrid',
@@ -2382,8 +1716,8 @@ const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
 const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeThoughtIdentity(choice));
 
 function makeThoughtIdentity(choice: BotChoice, model?: string, base?: string): string {
-  const normalizedModel = (model ?? defaultModelFor(choice) ?? '').trim();
-  const normalizedBase = choice === 'http' ? (base ?? '').trim() : '';
+  const normalizedModel = (model ?? '').trim();
+  const normalizedBase = (base ?? '').trim();
   return `${choice}|${normalizedModel}|${normalizedBase}`;
 }
 
@@ -2396,8 +1730,7 @@ function thoughtLabelForIdentity(id: string): string {
   const { choice, model, base } = parseThoughtIdentity(id);
   const label = choiceLabel(choice as BotChoice);
   if (typeof choice === 'string' && choice.startsWith('ai:')) {
-    const fallbackModel = defaultModelFor(choice as BotChoice);
-    const displayModel = model || fallbackModel || '';
+    const displayModel = (model || '').trim();
     return displayModel ? `${label}:${displayModel}` : label;
   }
   if (choice === 'http') {
@@ -2406,6 +1739,17 @@ function thoughtLabelForIdentity(id: string): string {
   }
   return label;
 }
+
+const LADDER_NAME_FONT = "'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Heiti SC', 'Source Han Sans SC', 'Noto Sans CJK SC', 'Segoe UI', sans-serif";
+const LADDER_LABEL_STYLE: CSSProperties = {
+  whiteSpace: 'nowrap',
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  fontSize: 14,
+  fontWeight: 600,
+  color: '#0f172a',
+  fontFamily: LADDER_NAME_FONT,
+};
 
 /* ===== 天梯图组件（x=ΔR_event，y=各 AI/内置；含未参赛=历史或0） ===== */
 function LadderPanel() {
@@ -2460,7 +1804,13 @@ function LadderPanel() {
   const itemsByPlays = [...arr].sort((a,b)=> b.matches - a.matches);
   const maxPlays = itemsByPlays.reduce((m, it) => Math.max(m, it.matches || 0), 0);
 
-  const axisStyle:any = { position:'absolute', left:'50%', top:0, bottom:0, width:1, background:'#e5e7eb' };
+  const axisStyle:any = { position:'absolute', left:'50%', top:0, bottom:0, width:1, background:'#cbd5f5' };
+  const deltaGradientPositive = 'linear-gradient(90deg, #bbf7d0, #34d399 65%, #059669)';
+  const deltaGradientNegative = 'linear-gradient(270deg, #fecdd3, #f87171 60%, #dc2626)';
+  const deltaShadowPositive = '0 1px 2px rgba(16, 185, 129, 0.35)';
+  const deltaShadowNegative = '0 1px 2px rgba(244, 63, 94, 0.3)';
+  const playsGradient = 'linear-gradient(90deg, #bfdbfe, #60a5fa 50%, #1d4ed8)';
+  const playsShadow = '0 1px 2px rgba(37, 99, 235, 0.25)';
   const playsUnit = lang === 'en' ? 'games' : '局';
 
   return (
@@ -2477,10 +1827,21 @@ function LadderPanel() {
           const pos = it.val >= 0;
           return (
             <div key={it.id} style={{ display:'contents' }}>
-              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
-              <div style={{ position:'relative', height:16, background:'#f9fafb', border:'1px solid #f3f4f6', borderRadius:8 }}>
+              <div style={LADDER_LABEL_STYLE}>{it.label}</div>
+              <div style={{ position:'relative', height:16, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8 }}>
                 <div style={axisStyle} />
-                <div style={{ position:'absolute', left: pos ? '50%' : `${50 - pct*50}%`, width: `${pct*50}%`, top:2, bottom:2, background: pos ? '#16a34a' : '#ef4444', borderRadius:6 }}/>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: pos ? '50%' : `${50 - pct * 50}%`,
+                    width: `${pct * 50}%`,
+                    top: 2,
+                    bottom: 2,
+                    background: pos ? deltaGradientPositive : deltaGradientNegative,
+                    borderRadius: 6,
+                    boxShadow: pos ? deltaShadowPositive : deltaShadowNegative,
+                  }}
+                />
               </div>
               <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right' }}>{it.val.toFixed(2)}</div>
             </div>
@@ -2499,99 +1860,23 @@ function LadderPanel() {
           })();
           return (
             <div key={`plays-${it.id}`} style={{ display:'contents' }}>
-              <div style={{ whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{it.label}</div>
-              <div style={{ position:'relative', height:16, background:'#f1f5f9', border:'1px solid #e2e8f0', borderRadius:8 }}>
-                <div style={{ position:'absolute', left:0, top:2, bottom:2, width:`${pct*100}%`, background:'#2563eb', borderRadius:6 }} />
+              <div style={LADDER_LABEL_STYLE}>{it.label}</div>
+              <div style={{ position:'relative', height:16, background:'#eef2ff', border:'1px solid #cbd5f5', borderRadius:8 }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 2,
+                    bottom: 2,
+                    width: `${pct * 100}%`,
+                    background: playsGradient,
+                    borderRadius: 6,
+                    boxShadow: playsShadow,
+                  }}
+                />
               </div>
               <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right', whiteSpace:'nowrap' }}>
                 {countText}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-type ThoughtSummaryPanelProps = { stats: ThoughtStore | null; lastMs: (number | null)[]; identities: string[]; lang: Lang };
-
-function ThoughtSummaryPanel({ stats, lastMs, identities, lang }: ThoughtSummaryPanelProps) {
-  const latest = new Map<string, { ms: number | null; seat: number }>();
-  identities.forEach((id, idx) => {
-    if (!id) return;
-    const val = Array.isArray(lastMs) ? lastMs[idx] ?? null : null;
-    latest.set(id, { ms: val, seat: idx });
-  });
-
-  const players = stats?.players || {};
-  const identityList = Array.from(new Set([...(stats ? Object.keys(players) : []), ...DEFAULT_THOUGHT_CATALOG_IDS]));
-  const items = identityList.map(id => {
-    const raw = players[id];
-    const mean = Number(raw?.mean) || 0;
-    const count = Math.max(0, Number(raw?.count) || 0);
-    const label = (typeof raw?.label === 'string' && raw.label.trim()) ? raw.label.trim() : thoughtLabelForIdentity(id);
-    const lastEntry = latest.get(id) || null;
-    return { id, label, mean, count, lastEntry };
-  });
-
-  items.sort((a, b) => {
-    const aHas = a.count > 0;
-    const bHas = b.count > 0;
-    if (aHas && bHas) {
-      if (a.mean !== b.mean) return a.mean - b.mean;
-      return a.label.localeCompare(b.label);
-    }
-    if (aHas) return -1;
-    if (bHas) return 1;
-    return a.label.localeCompare(b.label);
-  });
-
-  const maxMean = Math.max(0, ...items.filter(it => it.count > 0).map(it => it.mean));
-  const scale = maxMean > 0 ? maxMean : 1;
-  const title = lang === 'en' ? 'Thought time by identity' : '思考耗时（按身份）';
-  const subtitle = lang === 'en'
-    ? 'X-axis = running average thought time (ms); sorted by shortest first'
-    : '横轴=累计平均思考时长（毫秒），按耗时从短到长排序';
-  const fmt = (v:number|null) => {
-    if (typeof v !== 'number' || !Number.isFinite(v)) return '—';
-    if (v >= 1000) return v.toFixed(0);
-    return v.toFixed(1);
-  };
-  const countLabel = lang === 'en' ? 'n=' : '次数=';
-  const lastLabel = lang === 'en' ? 'Latest' : '最近';
-  const seatLabelPrefix = lang === 'en' ? 'Seat ' : '座位';
-  const colon = lang === 'en' ? ': ' : '：';
-  const barColor = '#60a5fa';
-  const layoutStyle = { display:'grid', gridTemplateColumns:'200px 1fr 80px 140px', gap:8, rowGap:10 } as const;
-  const wrapSeatTag = (tag:string) => {
-    if (!tag) return '';
-    return lang === 'en' ? ` (${seatLabelPrefix}${tag})` : `（${seatLabelPrefix}${tag}）`;
-  };
-
-  return (
-    <div style={{ border:'1px dashed #e5e7eb', borderRadius:8, padding:'12px 14px', marginBottom:12, background:'#f9fafb' }}>
-      <div style={{ fontWeight:700, marginBottom:2 }}>{title}</div>
-      <div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>{subtitle}</div>
-      <div style={layoutStyle}>
-        {items.map(item => {
-          const pct = item.count > 0 ? Math.min(1, item.mean / scale || 0) : 0;
-          const last = item.lastEntry;
-          const seatTag = last ? `${seatLabel(last.seat, lang)}` : '';
-          const lastValue = last ? last.ms : null;
-          return (
-            <div key={item.id} style={{ display:'contents' }}>
-              <div style={{ fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{item.label}</div>
-              <div style={{ position:'relative', height:18, background:'#e5e7eb33', borderRadius:9999, overflow:'hidden', border:'1px solid #e5e7eb' }}>
-                <div style={{ position:'absolute', left:0, top:0, bottom:0, width:`${pct*100}%`, background:barColor, transition:'width 0.3s ease', borderRadius:9999 }} />
-              </div>
-              <div style={{ fontFamily:'ui-monospace,Menlo,Consolas,monospace', textAlign:'right' }}>{item.count > 0 ? `${fmt(item.mean)} ms` : '—'}</div>
-              <div style={{ fontSize:12, color:'#374151' }}>
-                <div>{countLabel}{item.count}</div>
-                <div>
-                  {lastLabel}{colon}{lastValue != null ? `${fmt(lastValue)} ms` : '—'}
-                  {wrapSeatTag(seatTag)}
-                </div>
               </div>
             </div>
           );
@@ -2605,25 +1890,17 @@ function KnockoutPanel() {
   const { lang } = useI18n();
   const humanOptionLabel = lang === 'en' ? 'Human' : '人类选手';
   const humanProviderLabel = lang === 'en' ? 'Human player' : '人类选手';
-  const [settings, setSettings] = useState<KnockoutSettings>(() => {
-    if (typeof window === 'undefined') return defaultKnockoutSettings();
-    try {
-      const stored = localStorage.getItem(KO_SETTINGS_STORAGE);
-      if (stored) {
-        return sanitizeKnockoutSettings(JSON.parse(stored));
-      }
-    } catch {}
-    return defaultKnockoutSettings();
-  });
+  const [settings, setSettings] = useState<KnockoutSettings>(() =>
+    readConfigState(KO_SETTINGS_STORAGE, defaultKnockoutSettings, sanitizeKnockoutSettings),
+  );
   const [entries, setEntries] = useState<KnockoutEntry[]>(() => {
     if (typeof window === 'undefined') return makeDefaultKnockoutEntries();
+    const stored = readPlayerConfigs<any>(KO_ENTRY_STORAGE, () => []);
+    if (stored.length) {
+      const normalized = normalizeKnockoutEntries(stored);
+      if (normalized?.length) return normalized;
+    }
     try {
-      const stored = localStorage.getItem(KO_ENTRY_STORAGE);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        const normalized = normalizeKnockoutEntries(parsed);
-        if (normalized?.length) return normalized;
-      }
       const legacySeed = localStorage.getItem('ddz_knockout_seed');
       if (legacySeed) {
         const names = legacySeed.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -2698,8 +1975,7 @@ function KnockoutPanel() {
   useEffect(() => { matchLogRef.current = matchLog; }, [matchLog]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try { localStorage.setItem(KO_SETTINGS_STORAGE, JSON.stringify(settings)); } catch {}
+    writeConfigState(KO_SETTINGS_STORAGE, settings);
   }, [settings]);
 
   useEffect(() => {
@@ -2717,11 +1993,7 @@ function KnockoutPanel() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const payload = entries.map(persistableKnockoutEntry);
-      localStorage.setItem(KO_ENTRY_STORAGE, JSON.stringify(payload));
-    } catch {}
+    writePlayerConfigs(KO_ENTRY_STORAGE, entries, persistableKnockoutEntry);
   }, [entries]);
 
   useEffect(() => {
@@ -2809,7 +2081,11 @@ function KnockoutPanel() {
       payload.model = entry.model.trim();
     }
     if (entry.choice === 'http') {
-      payload.httpBase = (entry.keys?.httpBase || '').trim();
+      payload.httpBase = readProviderBase(entry.choice, entry.keys);
+    }
+    if (entry.choice === 'ai:deepseek') {
+      const base = readProviderBase(entry.choice, entry.keys);
+      if (base) payload.deepseekBase = base;
     }
     return JSON.stringify(payload);
   };
@@ -2826,8 +2102,12 @@ function KnockoutPanel() {
       if (model) payload.model = model;
     }
     if (entry.choice === 'http') {
-      const base = (entry.keys?.httpBase || '').trim();
+      const base = readProviderBase(entry.choice, entry.keys);
       if (base) payload.httpBase = base;
+    }
+    if (entry.choice === 'ai:deepseek') {
+      const base = readProviderBase(entry.choice, entry.keys);
+      if (base) payload.deepseekBase = base;
     }
     return JSON.stringify(payload);
   };
@@ -2974,11 +2254,18 @@ function KnockoutPanel() {
             } else {
               const model = (entry?.model || (typeof (parsed as any).model === 'string' ? (parsed as any).model as string : ''))
                 .trim();
-              const httpBase = (entry?.keys?.httpBase || (typeof (parsed as any).httpBase === 'string'
-                ? (parsed as any).httpBase as string
-                : ''))
-                .trim();
-              providerLabel = providerSummary(normalizedChoice, model, httpBase, lang);
+              const entryBase = readProviderBase(normalizedChoice, entry?.keys);
+              const tokenBase = (() => {
+                if (normalizedChoice === 'http') {
+                  return typeof (parsed as any).httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+                }
+                if (normalizedChoice === 'ai:deepseek') {
+                  return typeof (parsed as any).deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
+                }
+                return '';
+              })();
+              const customBase = entryBase || tokenBase;
+              providerLabel = providerSummary(normalizedChoice, model, customBase, lang);
             }
           }
           const merged = mergeAliasAndProvider(alias, providerLabel);
@@ -3014,13 +2301,22 @@ function KnockoutPanel() {
           : null;
         const modelFromEntry = entry?.model || '';
         const modelFromToken = typeof (parsed as any)?.model === 'string' ? (parsed as any).model as string : '';
-        const httpFromEntry = entry?.keys?.httpBase || '';
-        const httpFromToken = typeof (parsed as any)?.httpBase === 'string' ? (parsed as any).httpBase as string : '';
+        const baseFromEntry = normalizedChoice ? readProviderBase(normalizedChoice, entry?.keys) : '';
+        const baseFromToken = (() => {
+          if (!normalizedChoice) return '';
+          if (normalizedChoice === 'http') {
+            return typeof (parsed as any)?.httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+          }
+          if (normalizedChoice === 'ai:deepseek') {
+            return typeof (parsed as any)?.deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
+          }
+          return '';
+        })();
         const providerLabel = normalizedChoice
           ? providerSummary(
               normalizedChoice,
               (normalizedChoice.startsWith('ai:') ? (modelFromEntry || modelFromToken) : modelFromEntry) || '',
-              normalizedChoice === 'http' ? (httpFromEntry || httpFromToken) : httpFromEntry,
+              baseFromEntry || baseFromToken,
               lang,
             )
           : '';
@@ -3043,18 +2339,26 @@ function KnockoutPanel() {
           label,
           provider: entry.choice === 'human'
             ? humanProviderLabel
-            : providerSummary(entry.choice, entry.model, entry.keys?.httpBase, lang),
+            : providerSummary(entry.choice, entry.model, readProviderBase(entry.choice, entry.keys), lang),
         };
       }
       const rawChoice = typeof parsed?.choice === 'string' ? parsed.choice : '';
       if (KO_ALL_CHOICES.includes(rawChoice as BotChoice)) {
         const model = typeof parsed?.model === 'string' ? parsed.model : '';
-        const httpBase = typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
+        const baseFromToken = (() => {
+          if (rawChoice === 'http') {
+            return typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
+          }
+          if (rawChoice === 'ai:deepseek') {
+            return typeof parsed?.deepseekBase === 'string' ? parsed.deepseekBase : '';
+          }
+          return '';
+        })();
         return {
           label,
           provider: rawChoice === 'human'
             ? humanProviderLabel
-            : providerSummary(rawChoice as BotChoice, model, httpBase, lang),
+            : providerSummary(rawChoice as BotChoice, model, baseFromToken, lang),
         };
       }
     } catch {}
@@ -3381,7 +2685,7 @@ function KnockoutPanel() {
       label: ctx.labels[idx] || displayName(token),
       choice: ctx.seats[idx],
       model: ctx.seatModels[idx] || '',
-      httpBase: ctx.seatKeys[idx]?.httpBase || '',
+      baseUrl: readProviderBase(ctx.seats[idx], ctx.seatKeys[idx]),
     }));
     const rankedSummary = ranked.map(entry => {
       const pos = ctx.tokens.indexOf(entry.token);
@@ -3733,8 +3037,9 @@ function KnockoutPanel() {
                 />
               </label>
               <button
+                type="button"
                 onClick={handleResetAll}
-                style={{ padding:'4px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
               >{lang === 'en' ? 'Reset' : '清空'}</button>
             </div>
           </div>
@@ -3793,13 +3098,15 @@ function KnockoutPanel() {
                   onChange={handleAllFileUpload}
                 />
                 <button
+                  type="button"
                   onClick={() => allFileRef.current?.click()}
-                  style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                  className={cx(styles.pillButton, styles.variantGhost, styles.small)}
                 >{lang === 'en' ? 'Upload' : '上传'}</button>
               </label>
               <button
+                type="button"
                 onClick={() => window.dispatchEvent(new Event('ddz-all-save'))}
-                style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+                className={cx(styles.pillButton, styles.variantGhost, styles.small)}
               >{lang === 'en' ? 'Save' : '存档'}</button>
             </div>
           </div>
@@ -3851,16 +3158,10 @@ function KnockoutPanel() {
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8 }}>
                   <div style={{ fontWeight:600 }}>{participantLabel(idx)}</div>
                   <button
+                    type="button"
                     onClick={() => handleRemoveEntry(entry.id)}
                     disabled={!canRemove}
-                    style={{
-                      padding:'4px 8px',
-                      borderRadius:6,
-                      border:'1px solid #d1d5db',
-                      background: canRemove ? '#fff' : '#f3f4f6',
-                      color:'#1f2937',
-                      cursor: canRemove ? 'pointer' : 'not-allowed',
-                    }}
+                    className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
                   >{lang === 'en' ? 'Remove' : '移除'}</button>
                 </div>
                 <label style={{ display:'block' }}>
@@ -3895,18 +3196,16 @@ function KnockoutPanel() {
                 </label>
                 {entry.choice.startsWith('ai:') && (
                   <label style={{ display:'block' }}>
-                    {lang === 'en' ? 'Model (optional)' : '模型（可选）'}
+                    {lang === 'en' ? 'Model (required)' : '模型（必填）'}
                     <input
                       type="text"
                       value={entry.model}
-                      placeholder={defaultModelFor(entry.choice)}
+                      placeholder={lang === 'en' ? 'Model name' : '请输入模型名称'}
                       onChange={e => handleEntryModelChange(entry.id, e.target.value)}
                       style={{ width:'100%', marginTop:4 }}
                     />
                     <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
-                      {lang === 'en'
-                        ? `Leave blank to use ${defaultModelFor(entry.choice)}.`
-                        : `留空则使用推荐：${defaultModelFor(entry.choice)}`}
+                      {lang === 'en' ? 'Specify the exact model/version from the provider.' : '请填写提供方的模型或版本名称。'}
                     </div>
                   </label>
                 )}
@@ -3982,6 +3281,21 @@ function KnockoutPanel() {
                     />
                   </label>
                 )}
+                {entry.choice === 'ai:deepseek' && (
+                  <label style={{ display:'block', marginTop:6 }}>
+                    DeepSeek API 基础地址（可选）
+                    <input
+                      type="text"
+                      value={entry.keys?.deepseekBase || ''}
+                      onChange={e => handleEntryKeyChange(entry.id, 'deepseekBase', e.target.value)}
+                      style={{ width:'100%', marginTop:4 }}
+                      placeholder="https://api.deepseek.com/v1beta"
+                    />
+                    <div style={{ fontSize:12, color:'#6b7280', marginTop:4 }}>
+                      如果官方接口返回 402，可尝试将基础地址改为 v1beta。
+                    </div>
+                  </label>
+                )}
 
                 {entry.choice === 'http' && (
                   <>
@@ -4010,8 +3324,10 @@ function KnockoutPanel() {
           })}
         </div>
         <button
+          type="button"
           onClick={handleAddEntry}
-          style={{ marginTop:12, padding:'6px 12px', borderRadius:8, border:'1px solid #d1d5db', background:'#f9fafb', cursor:'pointer' }}
+          className={cx(styles.pillButton, styles.variantGhost)}
+          style={{ marginTop:12 }}
         >{lang === 'en' ? 'Add participant' : '新增参赛者'}</button>
       </div>
 
@@ -4075,28 +3391,16 @@ function KnockoutPanel() {
 
       <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:16 }}>
         <button
+          type="button"
           onClick={handleGenerate}
           disabled={!enabled}
-          style={{
-            padding:'6px 12px',
-            borderRadius:8,
-            border:'1px solid #d1d5db',
-            background: enabled ? '#2563eb' : '#9ca3af',
-            color:'#fff',
-            cursor: enabled ? 'pointer' : 'not-allowed',
-          }}
+          className={cx(styles.pillButton, styles.variantPrimary)}
         >{lang === 'en' ? 'Generate bracket' : '生成对阵'}</button>
         <button
+          type="button"
           onClick={handleReset}
           disabled={!enabled || !rounds.length}
-          style={{
-            padding:'6px 12px',
-            borderRadius:8,
-            border:'1px solid #d1d5db',
-            background: rounds.length && enabled ? '#fff' : '#f3f4f6',
-            color:'#1f2937',
-            cursor: rounds.length && enabled ? 'pointer' : 'not-allowed',
-          }}
+          className={cx(styles.pillButton, styles.variantGhost)}
         >{lang === 'en' ? 'Reset bracket' : '重置对阵'}</button>
       </div>
       {error && (
@@ -4124,17 +3428,10 @@ function KnockoutPanel() {
                   const startDisabled = !enabled || liveRunning || automationActive || !hasPendingMatch;
                   return (
                     <button
+                      type="button"
                       onClick={handleStartRound}
                       disabled={startDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: startDisabled ? '#f3f4f6' : '#2563eb',
-                        color: startDisabled ? '#9ca3af' : '#fff',
-                        cursor: startDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantPrimary)}
                     >{lang === 'en' ? 'Start' : '开始'}</button>
                   );
                 })()}
@@ -4142,17 +3439,10 @@ function KnockoutPanel() {
                   const pauseDisabled = !liveRunning;
                   return (
                     <button
+                      type="button"
                       onClick={handlePauseRound}
                       disabled={pauseDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: pauseDisabled ? '#f3f4f6' : (livePaused ? '#bfdbfe' : '#fde68a'),
-                        color: pauseDisabled ? '#9ca3af' : (livePaused ? '#1e3a8a' : '#92400e'),
-                        cursor: pauseDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantAmber)}
                     >{livePaused ? (lang === 'en' ? 'Resume' : '继续') : (lang === 'en' ? 'Pause' : '暂停')}</button>
                   );
                 })()}
@@ -4160,17 +3450,10 @@ function KnockoutPanel() {
                   const stopDisabled = !liveRunning && !automationActive;
                   return (
                     <button
+                      type="button"
                       onClick={handleStopRound}
                       disabled={stopDisabled}
-                      style={{
-                        padding:'6px 12px',
-                        borderRadius:8,
-                        border:'1px solid #d1d5db',
-                        background: stopDisabled ? '#f3f4f6' : '#fee2e2',
-                        color: stopDisabled ? '#9ca3af' : '#b91c1c',
-                        cursor: stopDisabled ? 'not-allowed' : 'pointer',
-                        fontWeight:600,
-                      }}
+                      className={cx(styles.pillButton, styles.variantDanger)}
                     >{lang === 'en' ? 'Stop' : '停止'}</button>
                   );
                 })()}
@@ -4291,16 +3574,14 @@ function KnockoutPanel() {
                                 return (
                                   <button
                                     key={player}
+                                    type="button"
                                     onClick={() => handleToggleEliminated(ridx, midx, player)}
                                     disabled={disabled}
-                                    style={{
-                                      padding:'4px 10px',
-                                      borderRadius:8,
-                                      border:'1px solid #d1d5db',
-                                      background: isActive ? '#dc2626' : disabled ? '#f3f4f6' : '#fff',
-                                      color: isActive ? '#fff' : disabled ? '#9ca3af' : '#1f2937',
-                                      cursor: disabled ? 'not-allowed' : 'pointer',
-                                    }}
+                                    className={cx(
+                                      styles.pillButton,
+                                      isActive ? styles.variantDanger : styles.variantGhost,
+                                      styles.small,
+                                    )}
                                   >{lang === 'en' ? `Eliminate ${displayName(player)}` : `淘汰 ${displayName(player)}`}</button>
                                 );
                               })}
@@ -4337,12 +3618,10 @@ function KnockoutPanel() {
                     const total = scoreboardTotals ? scoreboardTotals[idx] : null;
                     const seatChoice = currentMatch.seats[idx];
                     const model = (currentMatch.seatModels[idx] || '').trim();
-                    const httpBase = typeof currentMatch.seatKeys[idx]?.httpBase === 'string'
-                      ? currentMatch.seatKeys[idx]!.httpBase!.trim()
-                      : '';
+                    const baseOverride = readProviderBase(seatChoice, currentMatch.seatKeys[idx]);
                     const providerText = seatChoice === 'human'
                       ? humanProviderLabel
-                      : providerSummary(seatChoice, model, httpBase, lang);
+                      : providerSummary(seatChoice, model, baseOverride, lang);
                     return (
                       <div key={`${token}-score`} style={{ border:'1px solid #e5e7eb', borderRadius:8, padding:10, background:'#fff' }}>
                         <div style={{ fontWeight:700, marginBottom:4 }}>{label}</div>
@@ -4456,17 +3735,6 @@ function Section({ title, children }:{title:string; children:React.ReactNode}) {
 }
 
 /* ====== 模型预设/校验 ====== */
-function defaultModelFor(choice: BotChoice): string {
-  switch (choice) {
-    case 'ai:openai': return 'gpt-4o-mini';
-    case 'ai:gemini': return 'gemini-1.5-flash';
-    case 'ai:grok':  return 'grok-2-latest';
-    case 'ai:kimi':  return 'kimi-k2-0905-preview';
-    case 'ai:qwen':  return 'qwen-plus';
-    case 'ai:deepseek': return 'deepseek-chat';
-    default: return '';
-  }
-}
 function normalizeModelForProvider(choice: BotChoice, input: string): string {
   const m = (input || '').trim(); if (!m) return '';
   const low = m.toLowerCase();
@@ -4501,12 +3769,16 @@ function choiceLabel(choice: BotChoice): string {
   }
 }
 
-function providerSummary(choice: BotChoice, model: string | undefined, httpBase: string | undefined, lang: Lang = 'zh'): string {
+function providerSummary(choice: BotChoice, model: string | undefined, customBase: string | undefined, lang: Lang = 'zh'): string {
   const provider = choiceLabel(choice);
+  const base = (customBase || '').trim();
   if (choice === 'http') {
-    const base = (httpBase || '').trim();
     if (!base) return provider;
     const customLabel = lang === 'en' ? 'custom' : '自定义';
+    return `${provider} · ${customLabel}`;
+  }
+  if (choice === 'ai:deepseek' && base) {
+    const customLabel = lang === 'en' ? 'custom base' : '自定义接口';
     return `${provider} · ${customLabel}`;
   }
   if (choice.startsWith('ai:')) {
@@ -4743,12 +4015,13 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const [thoughtStore, setThoughtStore] = useState<ThoughtStore>(() => readThoughtStore());
   const thoughtStoreRef = useRef<ThoughtStore>(thoughtStore);
   useEffect(() => { thoughtStoreRef.current = thoughtStore; }, [thoughtStore]);
+  const lastRecordedRoundKeyRef = useRef<string | null>(null);
   const [lastThoughtMs, setLastThoughtMs] = useState<(number | null)[]>([null, null, null]);
   const seatIdentity = useCallback((i:number) => {
     const choice = props.seats[i] as BotChoice;
     const modelInput = Array.isArray(props.seatModels) ? props.seatModels[i] : undefined;
-    const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || defaultModelFor(choice);
-    const base = choice === 'http' ? (props.seatKeys?.[i]?.httpBase || '') : '';
+    const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || (modelInput || '').trim();
+    const base = readProviderBase(choice, props.seatKeys?.[i]);
     return makeThoughtIdentity(choice, normalizedModel, base);
   }, [props.seats, props.seatModels, props.seatKeys]);
   const botCallIssuedAtRef = useRef<Record<number, number>>({});
@@ -5338,18 +4611,12 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const baseStore = thoughtStoreRef.current ? ensureThoughtStore(thoughtStoreRef.current) : THOUGHT_EMPTY;
     const prevPlayers = { ...(baseStore.players || {}) };
     const sanitizedPrev = ensurePlayerStats(prevPlayers[identity]);
-    const prevCount = Math.max(0, Number(sanitizedPrev.count) || 0);
-    const prevMean = Number(sanitizedPrev.mean) || 0;
-    const nextCount = prevCount + 1;
-    const nextMean = (prevMean * prevCount + ms) / nextCount;
-    const displayLabel = sanitizedPrev.label && sanitizedPrev.label.trim() ? sanitizedPrev.label.trim() : thoughtLabelForIdentity(identity);
-    prevPlayers[identity] = {
-      mean: nextMean,
-      count: nextCount,
-      ...(displayLabel ? { label: displayLabel } : {}),
-    };
+    const fallbackLabel = thoughtLabelForIdentity(identity);
+    const displayLabel = sanitizedPrev.label && sanitizedPrev.label.trim() ? sanitizedPrev.label.trim() : fallbackLabel;
+    prevPlayers[identity] = updateLatencyStats(prevPlayers[identity], ms, displayLabel);
+    const latestStats = prevPlayers[identity];
     const nextStore: ThoughtStore = {
-      schema: 'ddz-latency@3',
+      schema: THOUGHT_SCHEMA,
       updatedAt: new Date().toISOString(),
       players: prevPlayers,
     };
@@ -5364,15 +4631,43 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const fmt = (v:number) => (v >= 1000 ? v.toFixed(0) : v.toFixed(1));
     const seatDisplay = seatLabel(seat, lang);
     const stats = persisted.players?.[identity];
-    const avgLabel = stats ? fmt(Number(stats.mean) || 0) : fmt(nextMean);
-    const countValue = stats ? Number(stats.count) || nextCount : nextCount;
-    const identityLabel = displayLabel || thoughtLabelForIdentity(identity);
+    const avgLabel = stats ? fmt(Number(stats.mean) || 0) : fmt(latestStats.mean);
+    const countValue = stats ? Number(stats.count) || latestStats.count : latestStats.count;
+    const identityLabel = displayLabel || fallbackLabel;
     const logLine = lang === 'en'
       ? `【Latency】${identityLabel}｜${seatDisplay}｜thought=${fmt(ms)}ms｜avg=${avgLabel}ms｜n=${countValue}`
       : `【Latency】${identityLabel}｜${seatDisplay}｜思考=${fmt(ms)}ms｜均值=${avgLabel}ms｜次数=${countValue}`;
     if (appendLog) appendLog(logLine);
     else setLog(l => [...l, logLine]);
   }, [lang, seatIdentity, setLog]);
+
+  const recordMatchSummary = useCallback(
+    (
+      winnerSeat: number | null | undefined,
+      landlordSeat: number | null | undefined,
+      roundKey: string | null,
+    ) => {
+      if (!roundKey) return;
+      if (lastRecordedRoundKeyRef.current === roundKey) return;
+      const store = ensureMatchSummaryStore(
+        readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA),
+        MATCH_STATS_SCHEMA,
+      );
+      let winnerKey: string | null = null;
+      if (typeof winnerSeat === 'number') {
+        if (typeof landlordSeat === 'number') {
+          winnerKey = winnerSeat === landlordSeat ? 'landlord' : 'farmers';
+        } else {
+          winnerKey = `seat-${winnerSeat}`;
+        }
+      }
+      const updated = incrementMatchSummary(store, winnerKey);
+      writeMatchSummaryStore(MATCH_STATS_KEY, updated);
+      lastRecordedRoundKeyRef.current = roundKey;
+      try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
+    },
+    [],
+  );
 
   const seatIdentitiesMemo = useMemo(() => [0,1,2].map(seatIdentity), [seatIdentity]);
   const seatDisplayNames = useMemo(
@@ -5388,7 +4683,6 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   // ===== 新增：TS 存档（读/写/应用） =====
   const tsStoreRef = useRef<TsStore>(emptyStore());
   useEffect(()=>{ try { tsStoreRef.current = readStore(); } catch {} }, []);
-  const fileRef = useRef<HTMLInputElement|null>(null);
 
   const resolveRatingForIdentity = (id: string, role?: TsRole): Rating | null => {
     const p = tsStoreRef.current.players[id]; if (!p) return null;
@@ -5433,8 +4727,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       entry.roles[role] = { ...updated[i] };
       const choice = props.seats[i];
       const model  = (props.seatModels[i] || '').trim();
-      const base   = choice==='http' ? (props.seatKeys[i]?.httpBase || '') : '';
-      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { httpBase: base } : {}) };
+      const base   = readProviderBase(choice, props.seatKeys[i]);
+      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       tsStoreRef.current.players[id] = entry;
     }
     writeStore(tsStoreRef.current);
@@ -5444,29 +4738,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const f = e.target.files?.[0]; if (!f) return;
     try {
       const text = await f.text();
-      const j = JSON.parse(text);
-      const store: TsStore = emptyStore();
-
-      // 兼容多种模板：数组 / {players:{}} / 单人
-      if (Array.isArray(j?.players)) {
-        for (const p of j.players) {
-          const id = p.id || p.identity || p.key; if (!id) continue;
-          store.players[id] = {
-            id,
-            overall: p.overall || p.rating || null,
-            roles: { landlord: p.roles?.landlord ?? p.landlord ?? p.L ?? null,
-                     farmer:   p.roles?.farmer   ?? p.farmer   ?? p.F ?? null },
-            meta: p.meta || {}
-          };
-        }
-      } else if (j?.players && typeof j.players === 'object') {
-        store.players = j.players;
-      } else if (Array.isArray(j)) {
-        for (const p of j) { const id = p.id || p.identity; if (!id) continue; store.players[id] = p; }
-      } else {
-        if (j?.id) store.players[j.id] = j;
-      }
-
+      const store = importTrueSkillArchive(text, TS_STORE_SCHEMA);
       tsStoreRef.current = store; writeStore(store);
       setLog(l => [...l, `【TS】已上传存档（共 ${Object.keys(store.players).length} 名玩家）`]);
     } catch (err:any) {
@@ -5475,10 +4747,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   };
 
   const makeArchiveName = (suffix: string) => {
-    const d = new Date();
-    const pad = (n:number) => String(n).padStart(2, '0');
-    const tag = `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-    return `ddz_all_stats_${tag}${suffix}`;
+    const base = formatTrueSkillArchiveName('ddz_all_stats');
+    return base.replace(/\.json$/, `${suffix}`);
   };
 
   const handleSaveArchive = () => {
@@ -5498,23 +4768,13 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
 
   // —— 用于“区分显示”的帮助函数 —— //
   const fmt2 = (x:number)=> (Math.round(x*100)/100).toFixed(2);
-  const muSig = (r: Rating | null | undefined) => r ? `μ ${fmt2(r.mu)}｜σ ${fmt2(r.sigma)}` : '—';
-  const getStoredForSeat = (i:number) => {
-    const id = seatIdentity(i);
-    const p = tsStoreRef.current.players[id];
-    return {
-      overall: p?.overall ? ensureRating(p.overall) : null,
-      landlord: p?.roles?.landlord ? ensureRating(p.roles.landlord) : null,
-      farmer: p?.roles?.farmer ? ensureRating(p.roles.farmer) : null,
-    };
-  };
   /* ===== Radar（战术画像）本地存档（新增） ===== */
   type RadarAgg = { scores: Score5; count: number };
   type RadarStoreEntry = {
     id: string; // 身份：choice|model|base（沿用 seatIdentity）
     overall?: RadarAgg | null;  // 不区分身份时累计
     roles?: { landlord?: RadarAgg | null; farmer?: RadarAgg | null }; // 按角色分档
-    meta?: { choice?: string; model?: string; httpBase?: string };
+    meta?: { choice?: string; model?: string; baseUrl?: string };
   };
   type RadarStore = {
     schema: 'ddz-radar@1';
@@ -5607,6 +4867,25 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const LADDER_KEY = 'ddz_ladder_store_v1';
   const LADDER_EMPTY: LadderStore = { schema:'ddz-ladder@1', updatedAt:new Date().toISOString(), players:{} };
   const LADDER_DEFAULT: LadderAgg = { n:0, sum:0, delta:0, deltaR:0, K:20, N0:20, matches:0 };
+  // 历史版本曾自动注入的模型名，仅用于迁移旧版存档，避免继续显示默认版本号
+  const LEGACY_DEFAULT_MODELS = ['gpt-4o-mini','gemini-1.5-flash','grok-2-latest','kimi-k2-0905-preview','qwen-plus','deepseek-chat'];
+
+  function migrateLegacyLadderEntry(targetId: string, store: LadderStore): string {
+    const [choice, model = '', base = ''] = String(targetId || '').split('|');
+    if (!choice.startsWith('ai:') || model) {
+      return targetId;
+    }
+    for (const legacy of LEGACY_DEFAULT_MODELS) {
+      const legacyId = `${choice}|${legacy}|${base}`;
+      if (store.players[legacyId]) {
+        const donor = store.players[legacyId];
+        delete store.players[legacyId];
+        store.players[targetId] = { ...donor, id: targetId };
+        break;
+      }
+    }
+    return targetId;
+  }
 
   function readLadder(): LadderStore {
     try { const raw = localStorage.getItem(LADDER_KEY); if (raw) { const j = JSON.parse(raw); if (j?.schema==='ddz-ladder@1') return j as LadderStore; } } catch {}
@@ -5617,9 +4896,11 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   }
   function ladderUpdateLocal(id:string, label:string, sWin:number, pExp:number, weight:number=1, matchIncrement:number=1) {
     const st = readLadder();
-    const ent = st.players[id] || { id, label, current: { ...LADDER_DEFAULT }, history: [] };
+    const resolvedId = migrateLegacyLadderEntry(id, st);
+    const ent = st.players[resolvedId] || { id: resolvedId, label, current: { ...LADDER_DEFAULT }, history: [] };
     if (!ent.current) ent.current = { ...LADDER_DEFAULT };
     if (!ent.label) ent.label = label;
+    else ent.label = label;
     const w = Math.max(0, Number(weight) || 0);
     const matchInc = Math.max(0, Number(matchIncrement) || 0);
     ent.current.n += w;
@@ -5634,7 +4915,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     ent.current.delta = ent.current.n > 0 ? (ent.current.sum / ent.current.n) : 0;
     const shrink = Math.sqrt(ent.current.n / (ent.current.n + Math.max(1, N0)));
     ent.current.deltaR = K * ent.current.delta * shrink;
-    st.players[id] = ent;
+    st.players[resolvedId] = ent;
     writeLadder(st);
     try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
   }
@@ -5664,8 +4945,8 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       }
       const choice = props.seats[i];
       const model  = (props.seatModels[i] || '').trim();
-      const base   = choice==='http' ? (props.seatKeys[i]?.httpBase || '') : '';
-      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { httpBase: base } : {}) };
+      const base   = readProviderBase(choice, props.seatKeys[i]);
+      entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       radarStoreRef.current.players[id] = entry;
     }
     // writeRadarStore disabled (no radar persistence)
@@ -5760,12 +5041,16 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   
   const scoreFileRef = useRef<HTMLInputElement|null>(null);
 
+  useEffect(() => () => {
+    controllerRef.current?.abort();
+  }, []);
+
   const agentIdForIndex = (i:number) => {
     const choice = props.seats[i] as BotChoice;
     const label = choiceLabel(choice);
     if ((choice as string).startsWith('built-in') || choice === 'human') return label;
-    const model = (props.seatModels?.[i]) || defaultModelFor(choice);
-    return `${label}:${model}`;
+    const model = (props.seatModels?.[i] || '').trim();
+    return model ? `${label}:${model}` : label;
   };
 
   const handleScoreSave = () => {
@@ -5892,16 +5177,20 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
 
     const buildSeatSpecs = (): any[] => {
       return props.seats.slice(0,3).map((choice, i) => {
-        const normalized = normalizeModelForProvider(choice, props.seatModels[i] || '');
-        const model = normalized || defaultModelFor(choice);
+        const manualModel = (props.seatModels[i] || '').trim();
+        const normalized = normalizeModelForProvider(choice, manualModel);
+        const model = normalized || manualModel;
         const keys = props.seatKeys[i] || {};
+        if (choice.startsWith('ai:') && !model) {
+          throw new Error(`${seatName(i)} 的 ${choiceLabel(choice)} 需填写模型名称`);
+        }
         switch (choice) {
           case 'ai:openai':   return { choice, model, apiKey: keys.openai || '' };
           case 'ai:gemini':   return { choice, model, apiKey: keys.gemini || '' };
           case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
-          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '' };
+          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '', baseUrl: readProviderBase(choice, keys) };
           case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
-          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '' };
+          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '', baseUrl: readProviderBase(choice, keys) };
           case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
@@ -5913,7 +5202,10 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         const nm = seatName(i);
         if (s.choice.startsWith('built-in')) return `${nm}=${choiceLabel(s.choice as BotChoice)}`;
         if (s.choice === 'http') return `${nm}=HTTP(${s.baseUrl ? 'custom' : 'default'})`;
-        return `${nm}=${choiceLabel(s.choice as BotChoice)}(${s.model || defaultModelFor(s.choice as BotChoice)})`;
+        if (s.choice === 'ai:deepseek') return `${nm}=DeepSeek(${s.baseUrl ? 'custom' : 'default'})`;
+        const model = typeof s.model === 'string' ? s.model.trim() : '';
+        const suffix = model ? `(${model})` : '';
+        return `${nm}=${choiceLabel(s.choice as BotChoice)}${suffix}`;
       }).join(', ');
 
     const markRoundFinishedIfNeeded = (
@@ -5958,6 +5250,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
       const toUiSeat = (j:number) => (j + startShift) % 3;
       const remap3 = <T,>(arr: T[]) => ([ arr[(0 - startShift + 3) % 3], arr[(1 - startShift + 3) % 3], arr[(2 - startShift + 3) % 3] ]) as T[];
       const traceId = Math.random().toString(36).slice(2,10) + '-' + Date.now().toString(36);
+      const roundKey = traceId;
       humanTraceRef.current = traceId;
       setLog(l => [...l, `【前端】开始第 ${labelRoundNo} 局 | 座位: ${seatSummaryText(baseSpecs)} | coop=${props.farmerCoop ? 'on' : 'off'} | trace=${traceId}`]);
 
@@ -6958,6 +6251,11 @@ if (m.type === 'event' && m.kind === 'play') {
                   }
                 }
                 nextWinner = nextWinnerLocal;
+                recordMatchSummary(
+                  typeof nextWinnerLocal === 'number' ? nextWinnerLocal : null,
+                  typeof nextLandlord === 'number' ? nextLandlord : null,
+                  roundKey,
+                );
 
                 // 标记一局结束 & 雷达图兜底
                 {
@@ -6980,7 +6278,7 @@ if (m.type === 'event' && m.kind === 'play') {
                     const vA  = teamA.reduce((ss,i)=> ss + pre[i].sigma*pre[i].sigma + TS_BETA*TS_BETA, 0);
                     const vB  = teamB.reduce((ss,i)=> ss + pre[i].sigma*pre[i].sigma + TS_BETA*TS_BETA, 0);
                     const c = Math.sqrt(vA + vB);
-                    return Phi( (muA - muB) / c );
+                    return normalCdf((muA - muB) / c);
                   };
                   const mag = Math.max(Math.abs(ds[0]||0), Math.abs(ds[1]||0), Math.abs(ds[2]||0));
                   const base = 20, cap = 3, gamma = 1;
@@ -7200,43 +6498,22 @@ if (m.type === 'event' && m.kind === 'play') {
   const controlsContent = (
     <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
       <button
+        type="button"
         onClick={start}
         disabled={running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: running ? '#f3f4f6' : '#2563eb',
-          color: running ? '#9ca3af' : '#fff',
-          cursor: running ? 'not-allowed' : 'pointer',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantPrimary)}
       >开始</button>
       <button
+        type="button"
         onClick={togglePause}
         disabled={!running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: !running ? '#f3f4f6' : (paused ? '#bfdbfe' : '#fde68a'),
-          color: !running ? '#9ca3af' : (paused ? '#1e3a8a' : '#92400e'),
-          cursor: !running ? 'not-allowed' : 'pointer',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantAmber)}
       >{paused ? '继续' : '暂停'}</button>
       <button
+        type="button"
         onClick={stop}
         disabled={!running}
-        style={{
-          padding:'8px 12px',
-          borderRadius:8,
-          border:'1px solid #d1d5db',
-          background: running ? '#fee2e2' : '#f3f4f6',
-          color: running ? '#b91c1c' : '#9ca3af',
-          cursor: running ? 'pointer' : 'not-allowed',
-          fontWeight:600,
-        }}
+        className={cx(styles.pillButton, styles.variantDanger)}
       >停止</button>
       <span style={{ display:'inline-flex', alignItems:'center', padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:8, fontSize:12, background:'#fff' }}>
         剩余局数：{remainingGames}
@@ -7262,6 +6539,7 @@ type AllBundle = {
   /* radar?: RadarStore;  // disabled */
   ladder?: { schema:'ddz-ladder@1'; updatedAt:string; players: Record<string, any> };
   latency?: ThoughtStore;
+  matchStats?: MatchSummaryStore;
 };
 
 const buildAllBundle = (): AllBundle => {
@@ -7272,6 +6550,7 @@ const buildAllBundle = (): AllBundle => {
     ladder = raw ? JSON.parse(raw) : null;
   } catch {}
   const latency = thoughtStoreRef.current ? ensureThoughtStore(thoughtStoreRef.current) : ensureThoughtStore(THOUGHT_EMPTY);
+  const matchStats = readMatchSummaryStore(MATCH_STATS_KEY, MATCH_STATS_SCHEMA);
   return {
     schema: 'ddz-all@1',
     createdAt: new Date().toISOString(),
@@ -7280,6 +6559,7 @@ const buildAllBundle = (): AllBundle => {
     /* radar excluded */
     ladder,
     latency,
+    matchStats,
   };
 };
 
@@ -7300,6 +6580,11 @@ const applyAllBundleInner = (obj:any) => {
       thoughtStoreRef.current = persisted;
       setThoughtStore(persisted);
       setLastThoughtMs([null, null, null]);
+    }
+    if (obj?.matchStats) {
+      const sanitizedStats = ensureMatchSummaryStore(obj.matchStats, MATCH_STATS_SCHEMA);
+      writeMatchSummaryStore(MATCH_STATS_KEY, sanitizedStats);
+      lastRecordedRoundKeyRef.current = null;
     }
     setLog(l => [...l, '【ALL】统一上传完成（TS / 画像 / 天梯 / 思考时延）。']);
   } catch (e:any) {
@@ -7353,86 +6638,14 @@ const handleAllSaveInner = () => {
       <div>
       {controlsNode}
 
-      <ThoughtSummaryPanel stats={thoughtStore} lastMs={lastThoughtMs} identities={seatIdentitiesMemo} lang={lang} />
-
-      {/* ========= TrueSkill（实时） ========= */}
-      <Section title="TrueSkill（实时）">
-        {/* 上传 / 存档 / 刷新 */}
-        <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-<div style={{ fontSize:12, color:'#6b7280' }}>按“内置/AI+模型/版本(+HTTP Base)”识别，并区分地主/农民。</div>
-        </div>
-
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-          {[0,1,2].map(i=>{
-            const stored = getStoredForSeat(i);
-            const usingRole: 'overall'|'landlord'|'farmer' =
-              landlord==null ? 'overall' : (landlord===i ? 'landlord' : 'farmer');
-            const seatIsHuman = isHumanSeat(i);
-            const timer = seatIsHuman ? null : botTimers[i];
-            let timerDisplay: ReactNode = null;
-            if (timer) {
-              const remainingMs = Math.max(0, timer.expiresAt - botClockTs);
-              const expired = remainingMs <= 0;
-              const seconds = Math.ceil(remainingMs / 1000);
-              const phaseLabel = timer.phase === 'bid'
-                ? (lang === 'en' ? 'Bidding' : '抢地主')
-                : timer.phase === 'double'
-                  ? (lang === 'en' ? 'Double' : '加倍')
-                  : (lang === 'en' ? 'Play' : '出牌');
-              const text = expired
-                ? (lang === 'en'
-                  ? 'Time expired. Waiting for auto action…'
-                  : '已超时，等待系统自动处理…')
-                : (lang === 'en'
-                  ? `Time left: ${seconds}s (${phaseLabel})`
-                  : `剩余时间：${seconds}秒（${phaseLabel}）`);
-              timerDisplay = (
-                <div style={{ fontSize:12, color: expired ? '#dc2626' : '#2563eb', marginBottom:6 }}>
-                  {text}
-                </div>
-              );
-            }
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:10 }}>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                {timerDisplay}
-                <div style={{ fontSize:13, color:'#374151' }}>
-                  <div>μ：<b>{fmt2(tsArr[i].mu)}</b></div>
-                  <div>σ：<b>{fmt2(tsArr[i].sigma)}</b></div>
-                  <div>CR = μ − 3σ：<b>{fmt2(tsCr(tsArr[i]))}</b></div>
-                </div>
-
-                {/* 区分显示总体/地主/农民三档，并标注当前使用 */}
-                <div style={{ borderTop:'1px dashed #eee', marginTop:8, paddingTop:8 }}>
-                  <div style={{ fontSize:12, marginBottom:6 }}>
-                    当前使用：<b>
-                      {usingRole === 'overall' ? '总体档' : usingRole === 'landlord' ? '地主档' : '农民档'}
-                    </b>
-                  </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, fontSize:12, color:'#374151' }}>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>总体</div>
-                      <div>{muSig(stored.overall)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>地主</div>
-                      <div>{muSig(stored.landlord)}</div>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight:600, opacity:0.8 }}>农民</div>
-                      <div>{muSig(stored.farmer)}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ fontSize:12, color:'#6b7280', marginTop:6 }}>
-          说明：CR 为置信下界（越高越稳）；每局结算后自动更新（也兼容后端直接推送 TS）。</div>
-      </Section>
+      <LatencySummaryPanel
+        store={thoughtStore}
+        lastMs={lastThoughtMs}
+        identities={seatIdentitiesMemo}
+        defaultCatalog={DEFAULT_THOUGHT_CATALOG_IDS}
+        labelForIdentity={thoughtLabelForIdentity}
+        lang={lang}
+      />
 
       {/* ======= 积分下面、手牌上面：雷达图 ======= */}
       <Section title="战术画像（累计，0~5）">
@@ -7772,15 +6985,10 @@ const handleAllSaveInner = () => {
                     {canAdoptHint && (
                       <div>
                         <button
+                          type="button"
                           onClick={applyHumanHint}
                           disabled={humanSubmitting || humanExpired}
-                          style={{
-                            padding:'4px 10px',
-                            border:'1px solid #3b82f6',
-                            borderRadius:6,
-                            background: humanSubmitting || humanExpired ? '#dbeafe' : '#3b82f6',
-                            color: humanSubmitting || humanExpired ? '#6b7280' : '#fff',
-                          }}
+                          className={cx(styles.pillButton, styles.variantPrimary, styles.tiny)}
                         >
                           {lang === 'en' ? 'Adopt suggestion' : '采纳建议'}
                         </button>
@@ -7790,31 +6998,25 @@ const handleAllSaveInner = () => {
                 )}
                 <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                   <button
+                    type="button"
                     onClick={handleHumanPlay}
                     disabled={humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired}
-                    style={{
-                      padding:'6px 12px',
-                      border:'1px solid #2563eb',
-                      borderRadius:8,
-                      background: humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired ? '#e5e7eb' : '#2563eb',
-                      color: humanSubmitting || humanSelectedCount === 0 || humanMustPass || humanExpired ? '#6b7280' : '#fff',
-                    }}
+                    className={cx(styles.pillButton, styles.variantPrimary)}
                   >{lang === 'en' ? 'Play selected' : '出牌'}</button>
                   <button
+                    type="button"
                     onClick={handleHumanPass}
                     disabled={humanSubmitting || !humanCanPass || humanExpired}
-                    style={{
-                      padding:'6px 12px',
-                      border:'1px solid #d1d5db',
-                      borderRadius:8,
-                      background: humanMustPass ? '#fee2e2' : (humanSubmitting || !humanCanPass || humanExpired ? '#f3f4f6' : '#fff'),
-                      color: humanMustPass ? '#b91c1c' : '#1f2937',
-                    }}
+                    className={cx(
+                      styles.pillButton,
+                      humanMustPass ? styles.variantDanger : styles.variantGhost,
+                    )}
                   >{lang === 'en' ? 'Pass' : '过'}</button>
                   <button
+                    type="button"
                     onClick={handleHumanClear}
                     disabled={humanSubmitting || humanSelectedCount === 0 || humanExpired}
-                    style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                    className={cx(styles.pillButton, styles.variantGhost)}
                   >{lang === 'en' ? 'Clear selection' : '清空选择'}</button>
                 </div>
               </>
@@ -7822,28 +7024,32 @@ const handleAllSaveInner = () => {
             {humanPhase === 'bid' && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 <button
+                  type="button"
                   onClick={() => handleHumanBid(true)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #2563eb', borderRadius:8, background: humanSubmitting || humanExpired ? '#e5e7eb' : '#2563eb', color: humanSubmitting || humanExpired ? '#6b7280' : '#fff' }}
+                  className={cx(styles.pillButton, styles.variantPrimary)}
                 >{lang === 'en' ? 'Bid' : '抢地主'}</button>
                 <button
+                  type="button"
                   onClick={() => handleHumanBid(false)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                  className={cx(styles.pillButton, styles.variantGhost)}
                 >{lang === 'en' ? 'Pass' : '不抢'}</button>
               </div>
             )}
             {humanPhase === 'double' && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
                 <button
+                  type="button"
                   onClick={() => handleHumanDouble(true)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #2563eb', borderRadius:8, background: humanSubmitting || humanExpired ? '#e5e7eb' : '#2563eb', color: humanSubmitting || humanExpired ? '#6b7280' : '#fff' }}
+                  className={cx(styles.pillButton, styles.variantPrimary)}
                 >{lang === 'en' ? 'Double' : '加倍'}</button>
                 <button
+                  type="button"
                   onClick={() => handleHumanDouble(false)}
                   disabled={humanSubmitting || humanExpired}
-                  style={{ padding:'6px 12px', border:'1px solid #d1d5db', borderRadius:8, background: humanSubmitting || humanExpired ? '#f3f4f6' : '#fff', color:'#1f2937' }}
+                  className={cx(styles.pillButton, styles.variantGhost)}
                 >{lang === 'en' ? 'No double' : '不加倍'}</button>
               </div>
             )}
@@ -7910,8 +7116,9 @@ const handleAllSaveInner = () => {
   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
     <div style={{ fontWeight:700 }}>运行日志</div>
     <button
+      type="button"
       onClick={() => { try { const lines=(allLogsRef.current||[]) as string[]; const ts=new Date().toISOString().replace(/[:.]/g,'-'); const text=lines.length?lines.join('\n'):'（暂无）'; const blob=new Blob([text],{type:'text/plain;charset=utf-8'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`run-log_${ts}.txt`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1200);} catch(e){ console.error('[runlog] save error', e); } }}
-      style={{ padding:'6px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
+      className={cx(styles.pillButton, styles.variantGhost, styles.small)}
     >存档</button>
   </div>
 
@@ -7934,43 +7141,65 @@ const DEFAULTS = {
   startScore: 100,
   four2: 'both' as Four2Policy,
   farmerCoop: true,
+  landlordMultiplier: 1,
+  farmerMultiplier: 1,
+  bidLimit: 3,
+  doubleFactor: 1,
+  splitStrategy: 'balanced' as SplitStrategy,
+  autoStartDelay: 0,
+  farmerCoopWeight: 0.5,
+  playScoreWeight: 0.5,
+  trueSkillWeight: 1,
+  logSampleInterval: 5,
+  coopMetric: 'sync' as CoopMetric,
+  logRetention: 200,
+  resetInterval: 30,
   seatDelayMs: [1000,1000,1000] as number[],
   seats: ['built-in:greedy-max','built-in:greedy-min','built-in:random-legal'] as BotChoice[],
-  // 让选择提供商时自动写入推荐模型；避免初始就带上 OpenAI 的模型名
+  // 模型初始为空，由用户手动填写
   seatModels: ['', '', ''],
-  seatKeys: [{ openai:'' }, { gemini:'' }, { httpBase:'', httpToken:'' }] as any[],};
+  seatKeys: [
+    { openai:'', deepseekBase:'' },
+    { gemini:'', deepseekBase:'' },
+    { httpBase:'', httpToken:'', deepseekBase:'' },
+  ] as any[],};
 
 function DdzRenderer() {
-  // Ensure language applies before paint on refresh
+  const [lang, setLang] = useState<Lang>(() => readSiteLanguage() ?? 'zh');
+  const initialLangRef = useRef(lang);
+
   useLayoutEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const v = localStorage.getItem('ddz_lang');
-        if (v === 'en' || v === 'zh') {
-          if (v !== lang) setLang(v as Lang);
-          if (typeof document !== 'undefined') document.documentElement.lang = v;
+    const stored = readSiteLanguage();
+    if (stored) {
+      setLang((prev) => {
+        if (prev === stored) {
+          writeSiteLanguage(stored);
+          return prev;
         }
-      }
-    } catch {}
+        return stored;
+      });
+      return;
+    }
+    writeSiteLanguage(initialLangRef.current);
   }, []);
 
-const [lang, setLang] = useState<Lang>(() => {
-    if (typeof window === 'undefined') return 'zh';
-    const v = localStorage.getItem('ddz_lang');
-    return (v === 'en' || v === 'zh') ? (v as Lang) : 'zh';
-  });
+  useEffect(() => {
+    const unsubscribe = subscribeSiteLanguage((next) => {
+      setLang((prev) => (prev === next ? prev : next));
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    writeSiteLanguage(lang);
+  }, [lang]);
+
   const [matchMode, setMatchMode] = useState<'regular'|'knockout'>(() => {
     if (typeof window === 'undefined') return 'regular';
     const v = localStorage.getItem('ddz_match_mode');
     return v === 'knockout' ? 'knockout' : 'regular';
   });
   const humanOptionLabel = lang === 'en' ? 'Human' : '人类选手';
-  useEffect(()=>{
-    try {
-      localStorage.setItem('ddz_lang', lang);
-      if (typeof document !== 'undefined') document.documentElement.lang = lang;
-    } catch {}
-  }, [lang]);
   useEffect(() => {
     try { localStorage.setItem('ddz_match_mode', matchMode); } catch {}
   }, [matchMode]);
@@ -7989,47 +7218,195 @@ const [lang, setLang] = useState<Lang>(() => {
   const [bid, setBid] = useState<boolean>(DEFAULTS.bid);
   const [four2, setFour2] = useState<Four2Policy>(DEFAULTS.four2);
   const [farmerCoop, setFarmerCoop] = useState<boolean>(DEFAULTS.farmerCoop);
+  const [landlordMultiplier, setLandlordMultiplier] = useState<number>(DEFAULTS.landlordMultiplier);
+  const [farmerMultiplier, setFarmerMultiplier] = useState<number>(DEFAULTS.farmerMultiplier);
+  const [bidLimit, setBidLimit] = useState<number>(DEFAULTS.bidLimit);
+  const [doubleFactor, setDoubleFactor] = useState<number>(DEFAULTS.doubleFactor);
+  const [splitStrategy, setSplitStrategy] = useState<SplitStrategy>(DEFAULTS.splitStrategy);
+  const [autoStartDelay, setAutoStartDelay] = useState<number>(DEFAULTS.autoStartDelay);
+  const [farmerCoopWeight, setFarmerCoopWeight] = useState<number>(DEFAULTS.farmerCoopWeight);
+  const [playScoreWeight, setPlayScoreWeight] = useState<number>(DEFAULTS.playScoreWeight);
+  const [trueSkillWeight, setTrueSkillWeight] = useState<number>(DEFAULTS.trueSkillWeight);
+  const [logSampleInterval, setLogSampleInterval] = useState<number>(DEFAULTS.logSampleInterval);
+  const [coopMetric, setCoopMetric] = useState<CoopMetric>(DEFAULTS.coopMetric);
+  const [logRetention, setLogRetention] = useState<number>(DEFAULTS.logRetention);
+  const [resetInterval, setResetInterval] = useState<number>(DEFAULTS.resetInterval);
   const [seatDelayMs, setSeatDelayMs] = useState<number[]>(DEFAULTS.seatDelayMs);
   const setSeatDelay = (i:number, v:number|string) => setSeatDelayMs(arr => { const n=[...arr]; n[i]=Math.max(0, Math.floor(Number(v)||0)); return n; });
 
   const [seats, setSeats] = useState<BotChoice[]>(DEFAULTS.seats);
   const [seatModels, setSeatModels] = useState<string[]>(DEFAULTS.seatModels);
   const [seatKeys, setSeatKeys] = useState(DEFAULTS.seatKeys);
+  const seatPanelConfigs = useMemo(
+    () => seats.map((mode, idx) => ({ mode, model: seatModels[idx], keys: seatKeys[idx] || {} })),
+    [seats, seatModels, seatKeys],
+  );
+  const seatOptionGroups = useMemo(
+    () => [
+      {
+        label: lang === 'en' ? 'Built-in' : '内置',
+        options: [
+          { value: 'built-in:greedy-max', label: 'Greedy Max' },
+          { value: 'built-in:greedy-min', label: 'Greedy Min' },
+          { value: 'built-in:random-legal', label: 'Random Legal' },
+          { value: 'built-in:mininet', label: 'MiniNet' },
+          { value: 'built-in:ally-support', label: 'AllySupport' },
+          { value: 'built-in:endgame-rush', label: 'EndgameRush' },
+          { value: 'built-in:advanced-hybrid', label: 'Advanced Hybrid' },
+        ],
+      },
+      {
+        label: lang === 'en' ? 'AI / External' : 'AI / 外置',
+        options: [
+          { value: 'ai:openai', label: 'OpenAI' },
+          { value: 'ai:gemini', label: 'Gemini' },
+          { value: 'ai:grok', label: 'Grok' },
+          { value: 'ai:kimi', label: 'Kimi' },
+          { value: 'ai:qwen', label: 'Qwen' },
+          { value: 'ai:deepseek', label: 'DeepSeek' },
+          { value: 'http', label: 'HTTP' },
+        ],
+      },
+      {
+        label: lang === 'en' ? 'Human' : '人类选手',
+        options: [{ value: 'human', label: humanOptionLabel }],
+      },
+    ],
+    [lang, humanOptionLabel],
+  );
+  const handleSeatModeChange = useCallback((index: number, nextMode: string) => {
+    const choice = nextMode as BotChoice;
+    setSeats((arr) => {
+      const copy = [...arr];
+      copy[index] = choice;
+      return copy;
+    });
+    setSeatModels((arr) => {
+      const copy = [...arr];
+      copy[index] = '';
+      return copy;
+    });
+  }, []);
+  const renderSeatFields = useCallback(
+    (i: number) => {
+      const choice = seats[i];
+      const blocks: ReactNode[] = [];
+      if (choice.startsWith('ai:')) {
+        blocks.push(
+          <label key={`model-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            模型（必填）
+            <input
+              type="text"
+              value={seatModels[i]}
+              placeholder="请输入模型名称"
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatModels((arr) => {
+                  const next = [...arr];
+                  next[i] = v;
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+            />
+            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>需填写提供方的模型或版本名称。</div>
+          </label>,
+        );
+      }
+      const pushKeyField = (
+        key: keyof (typeof seatKeys)[number],
+        label: string,
+        type: 'text' | 'password' = 'password',
+        placeholder?: string,
+      ) => {
+        const safeKey = String(key);
+        return (
+          <label key={`${safeKey}-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            {label}
+            <input
+              type={type}
+              value={(seatKeys[i]?.[key] as string) || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), [key]: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+              placeholder={placeholder}
+            />
+          </label>
+        );
+      };
+      if (choice === 'ai:openai') blocks.push(pushKeyField('openai', 'OpenAI API Key'));
+      if (choice === 'ai:gemini') blocks.push(pushKeyField('gemini', 'Gemini API Key'));
+      if (choice === 'ai:grok') blocks.push(pushKeyField('grok', 'xAI (Grok) API Key'));
+      if (choice === 'ai:kimi') blocks.push(pushKeyField('kimi', 'Kimi API Key'));
+      if (choice === 'ai:qwen') blocks.push(pushKeyField('qwen', 'Qwen API Key'));
+      if (choice === 'ai:deepseek') {
+        blocks.push(pushKeyField('deepseek', 'DeepSeek API Key'));
+        blocks.push(
+          <label key={`deepseek-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            DeepSeek API 基础地址（可选）
+            <input
+              type="text"
+              value={seatKeys[i]?.deepseekBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), deepseekBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+              placeholder="https://api.deepseek.com/v1beta"
+            />
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
+              若收到 402 余额不足，可尝试填写 v1beta 路径：如 https://api.deepseek.com/v1beta。
+            </div>
+          </label>,
+        );
+      }
+      if (choice === 'http') {
+        blocks.push(
+          <label key={`http-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            HTTP Base / URL
+            <input
+              type="text"
+              value={seatKeys[i]?.httpBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), httpBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+            />
+          </label>,
+        );
+        blocks.push(pushKeyField('httpToken', 'HTTP Token（可选）'));
+      }
+      return <>{blocks}</>;
+    },
+    [seats, seatModels, seatKeys],
+  );
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
-  const [disclaimerOpen, setDisclaimerOpen] = useState(false);
-  const [developerJoinOpen, setDeveloperJoinOpen] = useState(false);
-  const [blogOpen, setBlogOpen] = useState(false);
-  const [discordOpen, setDiscordOpen] = useState(false);
-  const disclaimerHostRef = useRef<HTMLElement | null>(null);
+  const tabKeys = ['core', 'ai', 'interval', 'timeout'] as const;
+  type DropdownKey = typeof tabKeys[number];
+  const [activeTab, setActiveTab] = useState<DropdownKey>('core');
+  const toggleTab = useCallback((key: DropdownKey) => {
+    setActiveTab(key);
+  }, []);
 
   const computeTotalMatches = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    try {
-      const raw = window.localStorage.getItem('ddz_ladder_store_v1');
-      if (!raw) {
-        setTotalMatches(0);
-        return;
-      }
-      const store = JSON.parse(raw) || {};
-      const players = (store?.players && typeof store.players === 'object') ? store.players as Record<string, any> : {};
-      let total = 0;
-      for (const key of Object.keys(players)) {
-        const entry = players[key];
-        if (!entry) continue;
-        const matches = entry?.current?.matches;
-        if (typeof matches === 'number' && Number.isFinite(matches)) {
-          total += Math.max(0, Math.round(matches));
-          continue;
-        }
-        const fallback = entry?.current?.n;
-        if (typeof fallback === 'number' && Number.isFinite(fallback)) {
-          total += Math.max(0, Math.round(fallback));
-        }
-      }
-      setTotalMatches(total);
-    } catch {
-      setTotalMatches(0);
-    }
+    const players = readDdzLadderPlayers();
+    const { totalMatches: aggregate } = computeDdzTotalMatches(players);
+    setTotalMatches(aggregate);
   }, []);
 
   useEffect(() => {
@@ -8044,55 +7421,14 @@ const [lang, setLang] = useState<Lang>(() => {
     };
   }, [computeTotalMatches]);
 
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    let host = document.getElementById('ddz-disclaimer-root') as HTMLElement | null;
-    if (!host) {
-      host = document.createElement('div');
-      host.id = 'ddz-disclaimer-root';
-      document.body.appendChild(host);
-    }
-    disclaimerHostRef.current = host;
-    return () => {
-      if (!host) return;
-      if (host.childElementCount === 0) {
-        host.remove();
-      }
-    };
-  }, []);
-
-  const disclaimerContent = useMemo(() => {
-    return DISCLAIMER_CONTENT[lang] ?? DISCLAIMER_CONTENT.zh;
-  }, [lang]);
-  const developerJoinContent = useMemo(() => {
-    return DEVELOPER_JOIN_CONTENT[lang] ?? DEVELOPER_JOIN_CONTENT.zh;
-  }, [lang]);
-  const blogContent = useMemo(() => {
-    const content = BLOG_CONTENT[lang] ?? BLOG_CONTENT.zh;
-    const sortedPosts = Array.isArray(content.posts)
-      ? [...content.posts].sort((a, b) => {
-          const timeA = new Date(a.date).getTime();
-          const timeB = new Date(b.date).getTime();
-          if (!Number.isFinite(timeA) && !Number.isFinite(timeB)) return 0;
-          if (!Number.isFinite(timeA)) return 1;
-          if (!Number.isFinite(timeB)) return -1;
-          return timeB - timeA;
-        })
-      : [];
-    return { ...content, posts: sortedPosts };
-  }, [lang]);
-  const discordContent = useMemo(() => {
-    return DISCORD_CONTENT[lang] ?? DISCORD_CONTENT.zh;
-  }, [lang]);
-
   const seatInfoLabels = useMemo(() => {
     return [0,1,2].map(i => {
       const choice = seats[i] as BotChoice;
       if (!choice) return '';
       const modelInput = Array.isArray(seatModels) ? seatModels[i] : '';
       const normalizedModel = normalizeModelForProvider(choice, modelInput || '')
-        || (modelInput || defaultModelFor(choice));
-      const base = choice === 'http' ? (seatKeys?.[i]?.httpBase || '') : '';
+        || (modelInput || '');
+      const base = readProviderBase(choice, seatKeys?.[i]);
       const identity = makeThoughtIdentity(choice, normalizedModel, base);
       const label = thoughtLabelForIdentity(identity);
       return label || '';
@@ -8110,11 +7446,18 @@ const [lang, setLang] = useState<Lang>(() => {
   const doResetAll = () => {
     setEnabled(DEFAULTS.enabled); setRounds(DEFAULTS.rounds); setStartScore(DEFAULTS.startScore);
     setBid(DEFAULTS.bid); setFour2(DEFAULTS.four2); setFarmerCoop(DEFAULTS.farmerCoop);
+    setLandlordMultiplier(DEFAULTS.landlordMultiplier); setFarmerMultiplier(DEFAULTS.farmerMultiplier);
+    setBidLimit(DEFAULTS.bidLimit); setDoubleFactor(DEFAULTS.doubleFactor); setSplitStrategy(DEFAULTS.splitStrategy);
+    setAutoStartDelay(DEFAULTS.autoStartDelay); setFarmerCoopWeight(DEFAULTS.farmerCoopWeight);
+    setPlayScoreWeight(DEFAULTS.playScoreWeight); setTrueSkillWeight(DEFAULTS.trueSkillWeight);
+    setLogSampleInterval(DEFAULTS.logSampleInterval); setCoopMetric(DEFAULTS.coopMetric);
+    setLogRetention(DEFAULTS.logRetention); setResetInterval(DEFAULTS.resetInterval);
     setSeatDelayMs([...DEFAULTS.seatDelayMs]); setSeats([...DEFAULTS.seats]);
     setSeatModels([...DEFAULTS.seatModels]); setSeatKeys(DEFAULTS.seatKeys.map((x:any)=>({ ...x })));
     setLiveLog([]); setResetKey(k => k + 1);
     try { localStorage.removeItem('ddz_ladder_store_v1'); } catch {}
     try { localStorage.removeItem('ddz_latency_store_v1'); } catch {}
+    try { localStorage.removeItem(MATCH_STATS_KEY); } catch {}
     try { window.dispatchEvent(new Event('ddz-all-refresh')); } catch {}
   };
 
@@ -8127,7 +7470,7 @@ const [lang, setLang] = useState<Lang>(() => {
       label: seatInfoLabels[idx] || seatLabel(idx, lang),
       choice,
       model: seatModels[idx] || '',
-      httpBase: seatKeys[idx]?.httpBase || '',
+      baseUrl: readProviderBase(choice, seatKeys[idx]),
       human: choice === 'human',
     }));
     const summary = lang === 'en'
@@ -8199,415 +7542,374 @@ const [lang, setLang] = useState<Lang>(() => {
               })()}
             </span>
           </div>
-          <div style={{ marginLeft:'auto', marginBottom:24, display:'flex', flexDirection:'column', alignItems:'stretch', gap:12 }} data-i18n-ignore>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span aria-hidden="true" title={lang==='en'?'Language':'语言'} style={{ fontSize:14, opacity:0.75, display:'inline-flex', alignItems:'center' }}>🌐</span>
-              <select aria-label={lang==='en'?'Language':'语言'} value={lang} onChange={e=>setLang((e.target.value as Lang))} style={{ padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}>
-                <option value="zh">中文</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-            <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', justifyContent:'space-between' }}>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
-                <DonationWidget lang={lang} />
-                <button
-                  type="button"
-                  onClick={() => { setDisclaimerOpen(true); setDeveloperJoinOpen(false); setBlogOpen(false); setDiscordOpen(false); }}
-                  style={{
-                    padding:'6px 16px',
-                    borderRadius:999,
-                    border:'1px solid #dc2626',
-                    background:'#fee2e2',
-                    color:'#b91c1c',
-                    fontWeight:600,
-                    cursor:'pointer',
-                    boxShadow:'0 1px 2px rgba(0,0,0,0.1)',
-                  }}
-                >
-                  {lang === 'en' ? I18N.en.DisclaimerButton : I18N.zh.DisclaimerButton}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDeveloperJoinOpen(true); setDisclaimerOpen(false); setBlogOpen(false); setDiscordOpen(false); }}
-                  style={{
-                    padding:'6px 16px',
-                    borderRadius:999,
-                    border:'1px solid #2563eb',
-                    background:'#eff6ff',
-                    color:'#1d4ed8',
-                    fontWeight:600,
-                    cursor:'pointer',
-                    boxShadow:'0 1px 2px rgba(0,0,0,0.08)',
-                  }}
-                >
-                  {lang === 'en' ? I18N.en.DeveloperJoinButton : I18N.zh.DeveloperJoinButton}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setDiscordOpen(true);
-                    setDisclaimerOpen(false);
-                    setDeveloperJoinOpen(false);
-                    setBlogOpen(false);
-                  }}
-                  style={{
-                    padding:'6px 16px',
-                    borderRadius:999,
-                    border:'1px solid #6366f1',
-                    background:'#eef2ff',
-                    color:'#4338ca',
-                    fontWeight:600,
-                    cursor:'pointer',
-                    boxShadow:'0 1px 2px rgba(0,0,0,0.08)',
-                  }}
-                >
-                  {lang === 'en' ? I18N.en.DiscordButton : I18N.zh.DiscordButton}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setBlogOpen(true); setDisclaimerOpen(false); setDeveloperJoinOpen(false); setDiscordOpen(false); }}
-                  style={{
-                    padding:'6px 16px',
-                    borderRadius:999,
-                    border:'1px solid #d97706',
-                    background:'#fef3c7',
-                    color:'#b45309',
-                    fontWeight:600,
-                    cursor:'pointer',
-                    boxShadow:'0 1px 2px rgba(0,0,0,0.06)',
-                  }}
-                >
-                  {lang === 'en' ? I18N.en.BlogButton : I18N.zh.BlogButton}
-                </button>
-              </div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
-                <button
-                  onClick={()=>setMatchMode('regular')}
-                  aria-pressed={isRegularMode}
-                  style={{
-                    padding:'6px 12px',
-                    borderRadius:8,
-                    border:'1px solid #d1d5db',
-                    background: isRegularMode ? '#2563eb' : '#fff',
-                    color: isRegularMode ? '#fff' : '#1f2937',
-                    cursor:'pointer',
-                    fontWeight:600,
-                  }}
-                >{regularLabel}</button>
-                <button
-                  onClick={()=>setMatchMode('knockout')}
-                  aria-pressed={!isRegularMode}
-                  style={{
-                    padding:'6px 12px',
-                    borderRadius:8,
-                    border:'1px solid #d1d5db',
-                    background: !isRegularMode ? '#2563eb' : '#fff',
-                    color: !isRegularMode ? '#fff' : '#1f2937',
-                    cursor:'pointer',
-                    fontWeight:600,
-                  }}
-                >{knockoutLabel}</button>
-              </div>
+          <div
+            style={{
+              marginBottom:24,
+              display:'flex',
+              flexWrap:'wrap',
+              gap:8,
+              alignItems:'center',
+              justifyContent:'center',
+            }}
+          >
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
+              <button
+                type="button"
+                onClick={()=>setMatchMode('regular')}
+                aria-pressed={isRegularMode}
+                className={cx(
+                  styles.pillButton,
+                  isRegularMode ? styles.variantToggleActive : styles.variantToggleInactive,
+                )}
+              >{regularLabel}</button>
+              <button
+                type="button"
+                onClick={()=>setMatchMode('knockout')}
+                aria-pressed={!isRegularMode}
+                className={cx(
+                  styles.pillButton,
+                  !isRegularMode ? styles.variantToggleActive : styles.variantToggleInactive,
+                )}
+              >{knockoutLabel}</button>
             </div>
           </div>
 
 
           {isRegularMode ? (
         <>
-        <div style={{ border:'1px solid #eee', borderRadius:12, padding:14, marginBottom:16 }}>
-          <div style={{ fontSize:18, fontWeight:800, marginBottom:6 }}>对局设置</div>
-          <div style={{
-            display:'grid',
-            gridTemplateColumns:'repeat(2, minmax(0, 1fr))',
-            gap:12,
-            gridAutoFlow:'row dense',
-            alignItems:'center'
-          }}>
-          <div>
-            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
-                启用对局
-                <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
-              </label>
-              <button onClick={doResetAll} style={{ padding:'4px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}>
-                清空
-              </button>
-            </div>
-          </div>
-
-          <label style={{ display:'flex', alignItems:'center', gap:8 }}>局数
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={rounds}
-              onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
-              style={{ flex:'1 1 120px', minWidth:0 }}
-            />
-          </label>
-
-
-          <div style={{ gridColumn:'1 / 2' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:24, flexWrap:'wrap' }}>
-              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
-                可抢地主
-                <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
-              </label>
-              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
-                农民配合
-                <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
-              </label>
-            </div>
-          </div>
-          <div style={{ gridColumn:'2 / 3' }}>
-            <label style={{ display:'flex', alignItems:'center', gap:8 }}>初始分
-            <input
-              type="number"
-              step={10}
-              value={startScore}
-              onChange={e=>setStartScore(Number(e.target.value)||0)}
-              style={{ flex:'1 1 120px', minWidth:0 }} />
-            </label>
-          </div>
-          <div style={{ gridColumn:'1 / 2' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-              <label style={{ display:'flex', alignItems:'center', gap:8 }}>
-                天梯  /  TrueSkill
-                <input
-                  ref={allFileRef}
-                  type="file"
-                  accept="application/json"
-                  style={{ display:'none' }}
-                  onChange={handleAllFileUpload}
-                />
+        <section className={styles.settingsCard}>
+          <div className={styles.tabWrapper}>
+            <div className={styles.tabList} role="tablist">
+              {tabKeys.map((key) => (
                 <button
-                  onClick={()=>allFileRef.current?.click()}
-                  style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
-                >上传</button>
-              </label>
-              <button
-                onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
-                style={{ padding:'3px 10px', border:'1px solid #e5e7eb', borderRadius:8, background:'#fff' }}
-              >存档</button>
+                  key={key}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeTab === key}
+                  className={cx(styles.tabButton, activeTab === key && styles.tabButtonActive)}
+                  onClick={() => toggleTab(key)}
+                >
+                  <span className={styles.tabLabel}>
+                    {key === 'core'
+                      ? '对局设置'
+                      : key === 'ai'
+                        ? '选手设置'
+                        : key === 'interval'
+                          ? '每家出牌最小间隔 (ms)'
+                          : '每家思考超时（秒）'}
+                  </span>
+                </button>
+              ))}
             </div>
-          </div>
-          <label style={{ gridColumn:'2 / 3', display:'flex', alignItems:'center', gap:8 }}>4带2 规则
-            <select
-              value={four2}
-              onChange={e=>setFour2(e.target.value as Four2Policy)}
-              style={{ flex:'1 1 160px', minWidth:0 }}>
-              <option value="both">都可</option>
-              <option value="2singles">两张单牌</option>
-              <option value="2pairs">两对</option>
-            </select>
-          </label>
-        </div>
-
-        <div style={{ marginTop:10, borderTop:'1px dashed #eee', paddingTop:10 }}>
-          <div style={{ fontWeight:700, marginBottom:6 }}>每家 AI 设置（独立）</div>
-
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-            {[0,1,2].map(i=>(
-              <div key={i} style={{ border:'1px dashed #ccc', borderRadius:8, padding:10 }}>
-                <div style={{ marginBottom:8 }}><SeatTitle i={i} /></div>
-
-                <label style={{ display:'block', marginBottom:6 }}>
-                  选择
-                  <select
-                    value={seats[i]}
-                    onChange={e=>{
-                      const v = e.target.value as BotChoice;
-                      setSeats(arr => { const n=[...arr]; n[i] = v; return n; });
-                      // 新增：切换提供商时，把当前输入框改成该提供商的推荐模型
-                      setSeatModels(arr => { const n=[...arr]; n[i] = defaultModelFor(v); return n; });
-                    }}
-                    style={{ width:'100%' }}
-                  >
-                    <optgroup label={lang === 'en' ? 'Built-in' : '内置'}>
-                      <option value="built-in:greedy-max">Greedy Max</option>
-                      <option value="built-in:greedy-min">Greedy Min</option>
-                      <option value="built-in:random-legal">Random Legal</option>
-                      <option value="built-in:mininet">MiniNet</option>
-                      <option value="built-in:ally-support">AllySupport</option>
-                      <option value="built-in:endgame-rush">EndgameRush</option>
-                      <option value="built-in:advanced-hybrid">Advanced Hybrid</option>
-                    </optgroup>
-                    <optgroup label={lang === 'en' ? 'AI / External' : 'AI / 外置'}>
-                      <option value="ai:openai">OpenAI</option>
-                      <option value="ai:gemini">Gemini</option>
-                      <option value="ai:grok">Grok</option>
-                      <option value="ai:kimi">Kimi</option>
-                      <option value="ai:qwen">Qwen</option>
-                      <option value="ai:deepseek">DeepSeek</option>
-                      <option value="http">HTTP</option>
-                    </optgroup>
-                    <optgroup label={lang === 'en' ? 'Human' : '人类选手'}>
-                      <option value="human">{humanOptionLabel}</option>
-                    </optgroup>
-                  </select>
-                </label>
-
-                {seats[i].startsWith('ai:') && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    模型（可选）
-                    <input
-                      type="text"
-                      value={seatModels[i]}
-                      placeholder={defaultModelFor(seats[i])}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatModels(arr => { const n=[...arr]; n[i] = v; return n; });
-                      }}
-                      style={{ width:'100%' }}
-                    />
-                    <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
-                      留空则使用推荐：{defaultModelFor(seats[i])}
+            <div className={styles.tabBody}>
+              {activeTab === 'core' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.tabActions}>
+                    <label className={styles.toggleLabel}>
+                      <input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)} />
+                      启用对局
+                    </label>
+                    <button
+                      type="button"
+                      onClick={doResetAll}
+                      className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                    >
+                      清空
+                    </button>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>局数</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={rounds}
+                        onChange={e=>setRounds(Math.max(1, Math.floor(Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>初始分</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        step={10}
+                        value={startScore}
+                        onChange={e=>setStartScore(Number(e.target.value)||0)}
+                      />
+                    </label>
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>规则</div>
+                      <div className={styles.checkboxStack}>
+                        <label className={styles.checkboxLabel}>
+                          <input type="checkbox" checked={bid} onChange={e=>setBid(e.target.checked)} />
+                          可抢地主
+                        </label>
+                        <label className={styles.checkboxLabel}>
+                          <input type="checkbox" checked={farmerCoop} onChange={e=>setFarmerCoop(e.target.checked)} />
+                          农民配合
+                        </label>
+                      </div>
                     </div>
-                  </label>
-                )}
-
-                {seats[i] === 'ai:openai' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    OpenAI API Key
-                    <input type="password" value={seatKeys[i]?.openai||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), openai:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:gemini' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Gemini API Key
-                    <input type="password" value={seatKeys[i]?.gemini||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), gemini:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:grok' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    xAI (Grok) API Key
-                    <input type="password" value={seatKeys[i]?.grok||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), grok:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:kimi' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Kimi API Key
-                    <input type="password" value={seatKeys[i]?.kimi||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), kimi:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:qwen' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    Qwen API Key
-                    <input type="password" value={seatKeys[i]?.qwen||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), qwen:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'ai:deepseek' && (
-                  <label style={{ display:'block', marginBottom:6 }}>
-                    DeepSeek API Key
-                    <input type="password" value={seatKeys[i]?.deepseek||''}
-                      onChange={e=>{
-                        const v = e.target.value;
-                        setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), deepseek:v }; return n; });
-                      }}
-                      style={{ width:'100%' }} />
-                  </label>
-                )}
-
-                {seats[i] === 'http' && (
-                  <>
-                    <label style={{ display:'block', marginBottom:6 }}>
-                      HTTP Base / URL
-                      <input type="text" value={seatKeys[i]?.httpBase||''}
-                        onChange={e=>{
-                          const v = e.target.value;
-                          setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), httpBase:v }; return n; });
-                        }}
-                        style={{ width:'100%' }} />
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>4带2 规则</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={four2}
+                        onChange={e=>setFour2(e.target.value as Four2Policy)}
+                      >
+                        <option value="both">都可</option>
+                        <option value="trio">仅炸弹/三带</option>
+                        <option value="single">仅单牌</option>
+                      </select>
                     </label>
-                    <label style={{ display:'block', marginBottom:6 }}>
-                      HTTP Token（可选）
-                      <input type="password" value={seatKeys[i]?.httpToken||''}
-                        onChange={e=>{
-                          const v = e.target.value;
-                          setSeatKeys(arr => { const n=[...arr]; n[i] = { ...(n[i]||{}), httpToken:v }; return n; });
-                        }}
-                        style={{ width:'100%' }} />
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
+                      <div className={styles.fieldActions}>
+                        <div>
+                          <input
+                            ref={allFileRef}
+                            type="file"
+                            accept="application/json"
+                            className={styles.hiddenFileInput}
+                            onChange={handleAllFileUpload}
+                          />
+                          <button
+                            type="button"
+                            onClick={()=>allFileRef.current?.click()}
+                            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                          >上传</button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
+                          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                        >存档</button>
+                      </div>
+                    </div>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>地主倍率</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        value={landlordMultiplier}
+                        onChange={e=>setLandlordMultiplier(Math.max(1, Number(e.target.value)||1))}
+                      />
                     </label>
-                  </>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ marginTop:12 }}>
-            <div style={{ fontWeight:700, marginBottom:6 }}>每家出牌最小间隔 (ms)</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-              {[0,1,2].map(i=>(
-                <div key={i} style={{ border:'1px dashed #eee', borderRadius:6, padding:10 }}>
-                  <div style={{ fontWeight:700, marginBottom:8 }}>{seatName(i)}</div>
-                  <label style={{ display:'block' }}>
-                    最小间隔 (ms)
-                    <input
-                      type="number" min={0} step={100}
-                      value={ (seatDelayMs[i] ?? 0) }
-                      onChange={e=>setSeatDelay(i, e.target.value)}
-                      style={{ width:'100%' }}
-                    />
-                  </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民倍率</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        value={farmerMultiplier}
+                        onChange={e=>setFarmerMultiplier(Math.max(1, Number(e.target.value)||1))}
+                      />
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>叫分上限</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        max={3}
+                        value={bidLimit}
+                        onChange={e=>setBidLimit(Math.min(3, Math.max(1, Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>加倍参数</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={0.5}
+                        value={doubleFactor}
+                        onChange={e=>setDoubleFactor(Math.max(1, Number(e.target.value)||1))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>拆牌策略</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={splitStrategy}
+                        onChange={e=>setSplitStrategy(e.target.value as SplitStrategy)}
+                      >
+                        <option value="balanced">平衡</option>
+                        <option value="aggressive">进攻</option>
+                        <option value="defensive">防守</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>AI 自动开始延迟 (ms)</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        step={250}
+                        value={autoStartDelay}
+                        onChange={e=>setAutoStartDelay(Math.max(0, Number(e.target.value)||0))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民配合权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={farmerCoopWeight}
+                        onChange={e=>setFarmerCoopWeight(Math.min(1, Math.max(0, Number(e.target.value)||0)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>出牌评分权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={playScoreWeight}
+                        onChange={e=>setPlayScoreWeight(Math.min(1, Math.max(0, Number(e.target.value)||0)))}
+                      />
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>TrueSkill 更新权重</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={0.1}
+                        max={2}
+                        step={0.1}
+                        value={trueSkillWeight}
+                        onChange={e=>setTrueSkillWeight(Math.min(2, Math.max(0.1, Number(e.target.value)||0.1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>日志采样间隔（局）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={logSampleInterval}
+                        onChange={e=>setLogSampleInterval(Math.max(1, Math.floor(Number(e.target.value)||1)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>农民配合指标</span>
+                      <select
+                        className={styles.fieldInput}
+                        value={coopMetric}
+                        onChange={e=>setCoopMetric(e.target.value as CoopMetric)}
+                      >
+                        <option value="sync">同步</option>
+                        <option value="tempo">节奏</option>
+                        <option value="support">支援</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div className={styles.settingsGrid}>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>运行日志保留（条）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={50}
+                        step={25}
+                        value={logRetention}
+                        onChange={e=>setLogRetention(Math.max(50, Math.floor(Number(e.target.value)||50)))}
+                      />
+                    </label>
+                    <label className={styles.fieldGroup}>
+                      <span className={styles.fieldLabel}>重置间隔（局）</span>
+                      <input
+                        className={styles.fieldInput}
+                        type="number"
+                        min={10}
+                        step={5}
+                        value={resetInterval}
+                        onChange={e=>setResetInterval(Math.max(10, Math.floor(Number(e.target.value)||10)))}
+                      />
+                    </label>
+                  </div>
                 </div>
+              )}
+              {activeTab === 'ai' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <PlayerConfigPanel
+                    title=""
+                    players={[0,1,2].map(i => ({ title: <SeatTitle i={i} /> }))}
+                    configs={seatPanelConfigs}
+                    optionGroups={seatOptionGroups}
+                    getMode={(config) => config?.mode}
+                    onModeChange={(index, mode) => handleSeatModeChange(index, mode)}
+                    renderMeta={(index) => (
+                      <div style={{ fontSize:12, color:'#4b5563' }}>
+                        当前：{choiceLabel(seats[index])}
+                      </div>
+                    )}
+                    renderFields={(index) => renderSeatFields(index)}
+                  />
+                </div>
+              )}
+              {activeTab === 'interval' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.seatGrid}>
+                    {[0,1,2].map(i=>(
+                      <div key={i} className={styles.seatCard}>
+                        <div className={styles.seatTitle}>{seatName(i)}</div>
+                        <label className={styles.subFieldLabel}>
+                          <span>最小间隔 (ms)</span>
+                          <input
+                            className={styles.fieldInput}
+                            type="number" min={0} step={100}
+                            value={ (seatDelayMs[i] ?? 0) }
+                            onChange={e=>setSeatDelay(i, e.target.value)}
+                          />
+                        </label>
+                      </div>
 
-              ))}
+                    ))}
+                  </div>
+                </div>
+              )}
+              {activeTab === 'timeout' && (
+                <div className={styles.tabCard} role="tabpanel">
+                  <div className={styles.seatGrid}>
+                    {[0,1,2].map(i=>(
+                      <div key={i} className={styles.seatCard}>
+                        <div className={styles.seatTitle}>{seatName(i)}</div>
+                        <label className={styles.subFieldLabel}>
+                          <span>弃牌时间（秒）</span>
+                          <input
+                            className={styles.fieldInput}
+                            type="number" min={5} step={1}
+                            value={ (turnTimeoutSecs[i] ?? 30) }
+                            onChange={e=>{
+                              const v = Math.max(5, Math.floor(Number(e.target.value)||0));
+                              setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-          <div style={{ marginTop:12 }}>
-            <div style={{ fontWeight:700, marginBottom:6 }}>每家思考超时（秒）</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
-              {[0,1,2].map(i=>(
-                <div key={i} style={{ border:'1px dashed #eee', borderRadius:6, padding:10 }}>
-                  <div style={{ fontWeight:700, marginBottom:8 }}>{seatName(i)}</div>
-                  <label style={{ display:'block' }}>
-                    弃牌时间（秒）
-                    <input
-                      type="number" min={5} step={1}
-                      value={ (turnTimeoutSecs[i] ?? 30) }
-                      onChange={e=>{
-                        const v = Math.max(5, Math.floor(Number(e.target.value)||0));
-                        setTurnTimeoutSecs(arr=>{ const cp=[...(arr||[30,30,30])]; cp[i]=v; return cp; });
-                      }}
-                      style={{ width:'100%' }}
-                    />
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
-          </div>
-        </div>
+        </section>
 
         <div ref={ladderControlsHostRef} style={{ margin:'16px 0' }} />
 
@@ -8640,403 +7942,6 @@ const [lang, setLang] = useState<Lang>(() => {
         <KnockoutPanel />
       )}
         </div>
-        {discordOpen && renderViaPortal(
-          <div
-            role="presentation"
-            onClick={() => setDiscordOpen(false)}
-            style={{
-              position:'fixed',
-              inset:0,
-              background:'rgba(0,0,0,0.45)',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              padding:'24px',
-              zIndex:2000,
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ddz-discord-title"
-              onClick={e => e.stopPropagation()}
-              data-i18n-ignore
-              style={{
-                background:'#fff',
-                maxWidth:560,
-                width:'100%',
-                maxHeight:'80vh',
-                overflowY:'auto',
-                borderRadius:12,
-                boxShadow:'0 20px 45px rgba(15,23,42,0.25)',
-                padding:'24px 28px',
-                lineHeight:1.65,
-              }}
-            >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
-                <h2 id="ddz-discord-title" style={{ margin:0, fontSize:20, fontWeight:800, color:'#1f2937' }}>{discordContent.title}</h2>
-                <button
-                  type="button"
-                  onClick={() => setDiscordOpen(false)}
-                  aria-label={lang === 'en' ? I18N.en.DiscordClose : I18N.zh.DiscordClose}
-                  style={{
-                    border:'none',
-                    background:'transparent',
-                    color:'#6b7280',
-                    fontSize:24,
-                    lineHeight:1,
-                    cursor:'pointer',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:18, color:'#374151', fontSize:14 }}>
-                {discordContent.intro?.map((text, idx) => (
-                  <p key={`discord-intro-${idx}`} style={{ margin:0 }}>{renderRichText(text)}</p>
-                ))}
-                <div
-                  style={{
-                    border:'1px solid #c7d2fe',
-                    background:'#eef2ff',
-                    borderRadius:12,
-                    padding:'16px 18px',
-                    display:'flex',
-                    flexDirection:'column',
-                    gap:8,
-                  }}
-                >
-                  <strong style={{ fontSize:15, color:'#312e81' }}>{discordContent.serverName}</strong>
-                  <p style={{ margin:0, color:'#4338ca' }}>{renderRichText(discordContent.inviteText)}</p>
-                  {discordContent.inviteNote ? (
-                    <p style={{ margin:0, color:'#4c1d95' }}>{renderRichText(discordContent.inviteNote)}</p>
-                  ) : null}
-                  <a
-                    href={discordContent.inviteUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{
-                      alignSelf:'flex-start',
-                      padding:'6px 14px',
-                      borderRadius:999,
-                      background:'#6366f1',
-                      color:'#fff',
-                      fontWeight:600,
-                      textDecoration:'none',
-                      boxShadow:'0 5px 12px rgba(79,70,229,0.35)',
-                    }}
-                  >
-                    {lang === 'en' ? 'Open Discord' : '打开 Discord'}
-                  </a>
-                </div>
-                {discordContent.sections.map(section => (
-                  <section
-                    key={`discord-section-${section.heading}`}
-                    style={{
-                      display:'flex',
-                      flexDirection:'column',
-                      gap:12,
-                      border:'1px solid #e5e7eb',
-                      borderRadius:12,
-                      padding:'16px 18px',
-                      background:'#f9fafb',
-                    }}
-                  >
-                    <h3 style={{ margin:0, fontSize:15, fontWeight:700, color:'#1f2937' }}>{section.heading}</h3>
-                    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                      {section.items.map(item => (
-                        <div
-                          key={`discord-item-${section.heading}-${item.id}`}
-                          style={{ display:'flex', flexDirection:'column', gap:4 }}
-                        >
-                          <div style={{ fontWeight:700, color:'#1d4ed8' }}>
-                            {item.link ? (
-                              <a
-                                href={item.link}
-                                target="_blank"
-                                rel="noreferrer"
-                                style={{ color:'#1d4ed8', textDecoration:'underline' }}
-                              >
-                                {item.name}
-                              </a>
-                            ) : (
-                              item.name
-                            )}
-                          </div>
-                          <div style={{ color:'#4b5563' }}>{renderRichText(item.description)}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                ))}
-                {discordContent.footer?.map((text, idx) => (
-                  <p key={`discord-footer-${idx}`} style={{ margin:0, fontSize:13, color:'#6b7280' }}>
-                    {renderRichText(text)}
-                  </p>
-                ))}
-              </div>
-            </div>
-          </div>,
-          disclaimerHostRef.current,
-        )}
-        {blogOpen && renderViaPortal(
-          <div
-            role="presentation"
-            onClick={() => setBlogOpen(false)}
-            style={{
-              position:'fixed',
-              inset:0,
-              background:'rgba(0,0,0,0.45)',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              padding:'24px',
-              zIndex:2000,
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ddz-blog-title"
-              onClick={e => e.stopPropagation()}
-              data-i18n-ignore
-              style={{
-                background:'#fff',
-                maxWidth:640,
-                width:'100%',
-                maxHeight:'80vh',
-                overflowY:'auto',
-                borderRadius:12,
-                boxShadow:'0 20px 45px rgba(15,23,42,0.25)',
-                padding:'24px 28px',
-                lineHeight:1.65,
-              }}
-            >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
-                <h2 id="ddz-blog-title" style={{ margin:0, fontSize:20, fontWeight:800, color:'#1f2937' }}>{blogContent.title}</h2>
-                <button
-                  type="button"
-                  onClick={() => setBlogOpen(false)}
-                  aria-label={lang === 'en' ? I18N.en.BlogClose : I18N.zh.BlogClose}
-                  style={{
-                    border:'none',
-                    background:'transparent',
-                    color:'#6b7280',
-                    fontSize:24,
-                    lineHeight:1,
-                    cursor:'pointer',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:18, color:'#374151', fontSize:14 }}>
-                {blogContent.intro?.map((text, idx) => (
-                  <p key={`blog-intro-${idx}`} style={{ margin:0 }}>{renderRichText(text)}</p>
-                ))}
-                {blogContent.posts.map(post => (
-                  <article
-                    key={post.id}
-                    style={{
-                      border:'1px solid #e5e7eb',
-                      borderRadius:12,
-                      padding:'16px 18px',
-                      display:'flex',
-                      flexDirection:'column',
-                      gap:12,
-                      background:'#f9fafb',
-                    }}
-                  >
-                    <header style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                      <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:'#111827' }}>{post.title}</h3>
-                      <span style={{ fontSize:12, color:'#6b7280' }}>{post.date}</span>
-                    </header>
-                    <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                      {post.paragraphs.map((text, idx) => (
-                        <p key={`blog-${post.id}-p-${idx}`} style={{ margin:0 }}>{renderRichText(text)}</p>
-                      ))}
-                    </div>
-                    {post.tags && post.tags.length > 0 ? (
-                      <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
-                        {post.tags.map(tag => (
-                          <span
-                            key={`blog-${post.id}-tag-${tag}`}
-                            style={{
-                              display:'inline-flex',
-                              alignItems:'center',
-                              padding:'2px 8px',
-                              borderRadius:999,
-                              background:'#fff',
-                              border:'1px solid #fbbf24',
-                              color:'#b45309',
-                              fontSize:12,
-                              fontWeight:600,
-                            }}
-                          >
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-            </div>
-          </div>,
-          disclaimerHostRef.current,
-        )}
-        {developerJoinOpen && renderViaPortal(
-          <div
-            role="presentation"
-            onClick={() => setDeveloperJoinOpen(false)}
-            style={{
-              position:'fixed',
-              inset:0,
-              background:'rgba(0,0,0,0.45)',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              padding:'24px',
-              zIndex:2000,
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ddz-developer-join-title"
-              onClick={e => e.stopPropagation()}
-              style={{
-                background:'#fff',
-                maxWidth:520,
-                width:'100%',
-                maxHeight:'80vh',
-                overflowY:'auto',
-                borderRadius:12,
-                boxShadow:'0 20px 45px rgba(15,23,42,0.25)',
-                padding:'24px 28px',
-                lineHeight:1.6,
-              }}
-            >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
-                <h2 id="ddz-developer-join-title" style={{ margin:0, fontSize:20, fontWeight:800, color:'#1f2937' }}>{developerJoinContent.title}</h2>
-                <button
-                  type="button"
-                  onClick={() => setDeveloperJoinOpen(false)}
-                  aria-label={lang === 'en' ? I18N.en.DeveloperJoinClose : I18N.zh.DeveloperJoinClose}
-                  style={{
-                    border:'none',
-                    background:'transparent',
-                    color:'#6b7280',
-                    fontSize:24,
-                    lineHeight:1,
-                    cursor:'pointer',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:16, color:'#374151' }}>
-                {developerJoinContent.blocks.map((block, blockIndex) => {
-                  if (block.kind === 'paragraph') {
-                    return (
-                      <p key={`dev-join-paragraph-${blockIndex}`} style={{ margin:0, fontSize:14, lineHeight:1.7 }}>
-                        {renderRichText(block.text)}
-                      </p>
-                    );
-                  }
-                  return (
-                    <div key={`dev-join-list-${blockIndex}`} style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                      <h3 style={{ margin:0, fontSize:15, fontWeight:700, color:'#1f2937' }}>{block.title}</h3>
-                      <ul style={{ margin:0, paddingLeft:20, fontSize:14, display:'flex', flexDirection:'column', gap:6 }}>
-                        {block.items.map((item, itemIndex) => {
-                          if (typeof item === 'string') {
-                            return (
-                              <li key={`dev-join-item-${blockIndex}-${itemIndex}`} style={{ margin:0 }}>
-                                {renderRichText(item)}
-                              </li>
-                            );
-                          }
-                          return (
-                            <li key={`dev-join-item-${blockIndex}-${itemIndex}`} style={{ margin:0 }}>
-                              {item.prefix ? <span>{item.prefix}</span> : null}
-                              {item.prefix ? ' ' : null}
-                              {renderRichText(item.text)}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>,
-          disclaimerHostRef.current,
-        )}
-        {disclaimerOpen && renderViaPortal(
-          <div
-            role="presentation"
-            onClick={() => setDisclaimerOpen(false)}
-            style={{
-              position:'fixed',
-              inset:0,
-              background:'rgba(0,0,0,0.45)',
-              display:'flex',
-              alignItems:'center',
-              justifyContent:'center',
-              padding:'24px',
-              zIndex:2000,
-            }}
-          >
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ddz-disclaimer-title"
-              onClick={e => e.stopPropagation()}
-              style={{
-                background:'#fff',
-                maxWidth:720,
-                width:'100%',
-                maxHeight:'85vh',
-                overflowY:'auto',
-                borderRadius:12,
-                boxShadow:'0 20px 45px rgba(15,23,42,0.25)',
-                padding:'24px 28px',
-                lineHeight:1.6,
-              }}
-            >
-              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16 }}>
-                <h2 id="ddz-disclaimer-title" style={{ margin:0, fontSize:20, fontWeight:800, color:'#111827' }}>{disclaimerContent.title}</h2>
-                <button
-                  type="button"
-                  onClick={() => setDisclaimerOpen(false)}
-                  aria-label={lang === 'en' ? I18N.en.DisclaimerClose : I18N.zh.DisclaimerClose}
-                  style={{
-                    border:'none',
-                    background:'transparent',
-                    color:'#6b7280',
-                    fontSize:24,
-                    lineHeight:1,
-                    cursor:'pointer',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-              <div style={{ marginTop:16, display:'flex', flexDirection:'column', gap:18 }}>
-                {disclaimerContent.sections.map(section => (
-                  <section key={section.title}>
-                    <h3 style={{ margin:'0 0 8px', fontSize:16, fontWeight:700, color:'#1f2937' }}>{section.title}</h3>
-                    {section.paragraphs.map((text, idx) => (
-                      <p key={idx} style={{ margin:'0 0 10px', color:'#374151', fontSize:14 }}>{text}</p>
-                    ))}
-                  </section>
-                ))}
-              </div>
-            </div>
-          </div>,
-          disclaimerHostRef.current,
-        )}
       </SeatInfoContext.Provider>
     </LangContext.Provider>
   </>);
