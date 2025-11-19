@@ -4461,7 +4461,7 @@ function defaultModelFor(choice: BotChoice): string {
     case 'ai:openai': return 'gpt-4o-mini';
     case 'ai:gemini': return 'gemini-1.5-flash';
     case 'ai:grok':  return 'grok-2-latest';
-    case 'ai:kimi':  return 'kimi-k2-0905-preview';
+    case 'ai:kimi':  return 'moonshot-v1-8k';
     case 'ai:qwen':  return 'qwen-plus';
     case 'ai:deepseek': return 'deepseek-chat';
     default: return '';
@@ -4471,7 +4471,11 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
   const m = (input || '').trim(); if (!m) return '';
   const low = m.toLowerCase();
   switch (choice) {
-    case 'ai:kimi':   return /^kimi[-\w]*/.test(low) ? m : '';
+    case 'ai:kimi': {
+      if (/^moonshot[-\w]*/.test(low)) return m;
+      if (low === 'kimi-k2-0905-preview') return 'moonshot-v1-8k';
+      return /^kimi[-\w]*/.test(low) ? m : '';
+    }
     case 'ai:openai': return /^(gpt-|o[34]|text-|omni)/.test(low) ? m : '';
     case 'ai:gemini': return /^gemini[-\w.]*/.test(low) ? m : '';
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
