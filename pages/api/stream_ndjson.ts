@@ -420,12 +420,36 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
       (stub as any).choice = 'human';
       return stub;
     }
-    case 'ai:openai':  return OpenAIBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'gpt-4o-mini' });
-    case 'ai:gemini':  return GeminiBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'gemini-1.5-pro' });
-    case 'ai:grok':    return GrokBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'grok-2' });
-    case 'ai:kimi':    return KimiBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'kimi-k2-0905-preview' });
-    case 'ai:qwen':    return QwenBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'qwen-plus' });
-    case 'ai:deepseek':return DeepseekBot({ apiKey: spec?.apiKey || '', model: spec?.model || 'deepseek-chat' });
+    case 'ai:openai': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('OpenAI 模型未配置');
+      return OpenAIBot({ apiKey: spec?.apiKey || '', model });
+    }
+    case 'ai:gemini': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('Gemini 模型未配置');
+      return GeminiBot({ apiKey: spec?.apiKey || '', model });
+    }
+    case 'ai:grok': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('Grok 模型未配置');
+      return GrokBot({ apiKey: spec?.apiKey || '', model });
+    }
+    case 'ai:kimi': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('Kimi 模型未配置');
+      return KimiBot({ apiKey: spec?.apiKey || '', model, baseUrl: spec?.baseUrl });
+    }
+    case 'ai:qwen': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('Qwen 模型未配置');
+      return QwenBot({ apiKey: spec?.apiKey || '', model });
+    }
+    case 'ai:deepseek': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('DeepSeek 模型未配置');
+      return DeepseekBot({ apiKey: spec?.apiKey || '', model, baseUrl: spec?.baseUrl });
+    }
     case 'http':       return HttpBot({ base: (spec?.baseUrl||'').replace(/\/$/,''), token: spec?.token || '' });
     default:           return GreedyMax;
   }

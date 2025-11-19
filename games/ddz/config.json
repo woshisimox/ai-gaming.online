@@ -3,6 +3,6 @@
   "name": "Fight the Landlord",
   "displayName": "斗地主",
   "maxPlayers": 3,
-  "description": "Classic three-player landlord card game.",
+  "description": "经典三人斗地主玩法。",
   "defaultRenderer": "ddz"
 }
