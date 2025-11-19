@@ -35,7 +35,9 @@ export const GeminiBot = (o: { apiKey: string; model?: string }): BotFunc =>
   async (ctx: BotCtx) => {
     try {
       if (!o.apiKey) throw new Error('Missing Gemini API Key');
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${o.model || 'gemini-1.5-flash'}:generateContent?key=${encodeURIComponent(o.apiKey)}`;
+      const model = (o.model || '').trim();
+      if (!model) throw new Error('Missing Gemini model name');
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(o.apiKey)}`;
       const phase = ((ctx as any)?.phase || 'play') as 'bid' | 'double' | 'play';
       const attempts: PromptMode[] = ['normal', 'safe', 'minimal'];
       let lastErr: any;

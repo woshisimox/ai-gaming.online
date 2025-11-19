@@ -82,12 +82,14 @@ async function requestKimi(
 ) {
   await throttle();
   const url = (o.baseUrl || 'https://api.moonshot.cn').replace(/\/$/, '') + '/v1/chat/completions';
+  const model = (o.model || '').trim();
+  if (!model) throw new Error('Missing Kimi model name');
   const { system, user } = buildDouPrompts(ctx, phase, mode);
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
     body: JSON.stringify({
-      model: o.model || 'moonshot-v1-8k',
+      model,
       temperature: 0.2,
       messages: [
         { role: 'system', content: system },
