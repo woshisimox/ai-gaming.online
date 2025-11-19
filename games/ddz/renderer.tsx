@@ -5897,16 +5897,20 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
     const buildSeatSpecs = (): any[] => {
       return props.seats.slice(0,3).map((choice, i) => {
         const normalized = normalizeModelForProvider(choice, props.seatModels[i] || '');
-        const model = normalized || defaultModelFor(choice);
+        const model = (normalized || '').trim();
         const keys = props.seatKeys[i] || {};
+        const attachModel = <T extends { choice: BotChoice }>(spec: T): T => {
+          if (model) (spec as any).model = model;
+          return spec;
+        };
         switch (choice) {
-          case 'ai:openai':   return { choice, model, apiKey: keys.openai || '' };
-          case 'ai:gemini':   return { choice, model, apiKey: keys.gemini || '' };
-          case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
-          case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '' };
-          case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
-          case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '' };
-          case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
+          case 'ai:openai':   return attachModel({ choice, apiKey: keys.openai || '' });
+          case 'ai:gemini':   return attachModel({ choice, apiKey: keys.gemini || '' });
+          case 'ai:grok':     return attachModel({ choice, apiKey: keys.grok || '' });
+          case 'ai:kimi':     return attachModel({ choice, apiKey: keys.kimi || '' });
+          case 'ai:qwen':     return attachModel({ choice, apiKey: keys.qwen || '' });
+          case 'ai:deepseek': return attachModel({ choice, apiKey: keys.deepseek || '' });
+          case 'http':        return { choice, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
       });
@@ -8422,8 +8426,8 @@ const [lang, setLang] = useState<Lang>(() => {
                     onChange={e=>{
                       const v = e.target.value as BotChoice;
                       setSeats(arr => { const n=[...arr]; n[i] = v; return n; });
-                      // 新增：切换提供商时，把当前输入框改成该提供商的推荐模型
-                      setSeatModels(arr => { const n=[...arr]; n[i] = defaultModelFor(v); return n; });
+                      // 调整：切换提供商时清空输入，改为可选项
+                      setSeatModels(arr => { const n=[...arr]; n[i] = ''; return n; });
                     }}
                     style={{ width:'100%' }}
                   >
