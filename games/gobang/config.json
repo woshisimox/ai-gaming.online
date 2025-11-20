@@ -1,0 +1,8 @@
+{
+  "id": "gobang",
+  "name": "Gomoku",
+  "displayName": "五子棋",
+  "maxPlayers": 2,
+  "description": "在 15x15 棋盘上连成五子即可获胜。",
+  "boardSize": 15
+}
