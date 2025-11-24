@@ -86,9 +86,25 @@ export default function DdzLadderCard({ refreshToken, lang }: { refreshToken: nu
 
   const labelForDisplay = (label: string) => displayDdzParticipantLabel(label) || label;
 
+  const dedupedPlayers = useMemo(() => {
+    const merged = new Map<string, DdzLadderPlayer>();
+    for (const player of players) {
+      const normalizedLabel = labelForDisplay(player.label);
+      const existing = merged.get(normalizedLabel);
+      if (!existing) {
+        merged.set(normalizedLabel, { ...player, label: normalizedLabel });
+      } else {
+        const combinedMatches = (existing.matches || 0) + (player.matches || 0);
+        const preferred = existing.matches >= player.matches ? existing : player;
+        merged.set(normalizedLabel, { ...preferred, label: normalizedLabel, matches: combinedMatches });
+      }
+    }
+    return Array.from(merged.values());
+  }, [players]);
+
   const { byScore, byMatches, maxAbsScore, maxMatches } = useMemo(() => {
-    const sorted = [...players].sort((a, b) => b.deltaR - a.deltaR);
-    const matchesSorted = [...players].sort((a, b) => b.matches - a.matches);
+    const sorted = [...dedupedPlayers].sort((a, b) => b.deltaR - a.deltaR);
+    const matchesSorted = [...dedupedPlayers].sort((a, b) => b.matches - a.matches);
     const maxAbs = sorted.length
       ? Math.max(
           ...sorted.map((player) => Math.abs(player.deltaR)),
@@ -97,7 +113,7 @@ export default function DdzLadderCard({ refreshToken, lang }: { refreshToken: nu
       : 0;
     const playsMax = matchesSorted.reduce((max, player) => Math.max(max, player.matches || 0), 0);
     return { byScore: sorted, byMatches: matchesSorted, maxAbsScore: maxAbs || 1, maxMatches: playsMax || 1 };
-  }, [players]);
+  }, [dedupedPlayers]);
 
   const latencyRows = useMemo(() => {
     const entries = Object.entries(latencyStore.players || {});
