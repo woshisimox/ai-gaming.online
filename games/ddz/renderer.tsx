@@ -508,7 +508,7 @@ function createDefaultKnockoutEntry(choice: BotChoice, existing: KnockoutEntry[]
     id: makeKnockoutEntryId(),
     choice,
     name: defaultAliasForChoice(choice, existing),
-    model: '',
+    model: defaultModelForChoice(choice),
     keys: {},
     delayMs: KO_DEFAULT_DELAY,
     timeoutSecs: KO_DEFAULT_TIMEOUT,
@@ -594,8 +594,8 @@ function normalizeKnockoutEntries(raw: any): KnockoutEntry[] {
     const id = typeof item?.id === 'string' && item.id
       ? item.id
       : makeKnockoutEntryId();
-    const model = choice.startsWith('ai:') && typeof item?.model === 'string'
-      ? item.model
+    const model = choice.startsWith('ai:')
+      ? resolveModelForChoice(choice, typeof item?.model === 'string' ? item.model : '')
       : '';
     const keys = reviveStoredKnockoutKeys(choice, item?.keys);
     const delayMs = Number.isFinite(Number(item?.delayMs)) ? Math.max(0, Math.floor(Number(item.delayMs))) : KO_DEFAULT_DELAY;
@@ -2264,8 +2264,10 @@ function KnockoutPanel() {
             if (normalizedChoice === 'human') {
               providerLabel = humanProviderLabel;
             } else {
-              const model = (entry?.model || (typeof (parsed as any).model === 'string' ? (parsed as any).model as string : ''))
-                .trim();
+              const model = resolveModelForChoice(
+                normalizedChoice,
+                entry?.model || (typeof (parsed as any).model === 'string' ? (parsed as any).model as string : ''),
+              );
               const entryBase = readProviderBase(normalizedChoice, entry?.keys);
               const tokenBase = (() => {
                 if (normalizedChoice === 'http') {
@@ -2327,7 +2329,9 @@ function KnockoutPanel() {
         const providerLabel = normalizedChoice
           ? providerSummary(
               normalizedChoice,
-              (normalizedChoice.startsWith('ai:') ? (modelFromEntry || modelFromToken) : modelFromEntry) || '',
+              normalizedChoice.startsWith('ai:')
+                ? resolveModelForChoice(normalizedChoice, modelFromEntry || modelFromToken)
+                : (modelFromEntry || ''),
               baseFromEntry || baseFromToken,
               lang,
             )
@@ -2351,7 +2355,7 @@ function KnockoutPanel() {
           label,
           provider: entry.choice === 'human'
             ? humanProviderLabel
-            : providerSummary(entry.choice, entry.model, readProviderBase(entry.choice, entry.keys), lang),
+            : providerSummary(entry.choice, resolveModelForChoice(entry.choice, entry.model), readProviderBase(entry.choice, entry.keys), lang),
         };
       }
       const rawChoice = typeof parsed?.choice === 'string' ? parsed.choice : '';
@@ -2370,7 +2374,7 @@ function KnockoutPanel() {
           label,
           provider: rawChoice === 'human'
             ? humanProviderLabel
-            : providerSummary(rawChoice as BotChoice, model, baseFromToken, lang),
+            : providerSummary(rawChoice as BotChoice, resolveModelForChoice(rawChoice as BotChoice, model), baseFromToken, lang),
         };
       }
     } catch {}
@@ -3760,6 +3764,25 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
     default: return '';
   }
 }
+
+const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
+  'ai:openai': 'gpt-4o-mini',
+  'ai:gemini': 'gemini-1.5-flash',
+  'ai:grok': 'grok-2-latest',
+  'ai:kimi': 'kimi-k2-0905-preview',
+  'ai:qwen': 'qwen-plus',
+  'ai:deepseek': 'deepseek-chat',
+};
+
+function defaultModelForChoice(choice: BotChoice): string {
+  return DEFAULT_MODEL_BY_CHOICE[choice] || '';
+}
+
+function resolveModelForChoice(choice: BotChoice, raw?: string): string {
+  const normalized = normalizeModelForProvider(choice, raw || '');
+  const fallback = defaultModelForChoice(choice);
+  return (normalized || (raw || '').trim() || fallback || '').trim();
+}
 function choiceLabel(choice: BotChoice): string {
   switch (choice) {
     case 'built-in:greedy-max':   return 'Greedy Max';
@@ -4032,7 +4055,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const seatIdentity = useCallback((i:number) => {
     const choice = props.seats[i] as BotChoice;
     const modelInput = Array.isArray(props.seatModels) ? props.seatModels[i] : undefined;
-    const normalizedModel = normalizeModelForProvider(choice, modelInput || '') || (modelInput || '').trim();
+    const normalizedModel = resolveModelForChoice(choice, modelInput);
     const base = readProviderBase(choice, props.seatKeys?.[i]);
     return makeThoughtIdentity(choice, normalizedModel, base);
   }, [props.seats, props.seatModels, props.seatKeys]);
@@ -4740,7 +4763,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       entry.roles = entry.roles || {};
       entry.roles[role] = { ...updated[i] };
       const choice = props.seats[i];
-      const model  = (props.seatModels[i] || '').trim();
+      const model  = resolveModelForChoice(choice, props.seatModels[i]);
       const base   = readProviderBase(choice, props.seatKeys[i]);
       entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       tsStoreRef.current.players[id] = entry;
@@ -4958,7 +4981,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
         entry.roles[role] = mergeRadarAgg(entry.roles[role], s3[i]);
       }
       const choice = props.seats[i];
-      const model  = (props.seatModels[i] || '').trim();
+      const model  = resolveModelForChoice(choice, props.seatModels[i]);
       const base   = readProviderBase(choice, props.seatKeys[i]);
       entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       radarStoreRef.current.players[id] = entry;
@@ -5063,7 +5086,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     const choice = props.seats[i] as BotChoice;
     const label = choiceLabel(choice);
     if ((choice as string).startsWith('built-in') || choice === 'human') return label;
-    const model = (props.seatModels?.[i] || '').trim();
+    const model = resolveModelForChoice(choice, props.seatModels?.[i]);
     return model ? `${label}:${model}` : label;
   };
 
@@ -5192,8 +5215,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
     const buildSeatSpecs = (): any[] => {
       return props.seats.slice(0,3).map((choice, i) => {
         const manualModel = (props.seatModels[i] || '').trim();
-        const normalized = normalizeModelForProvider(choice, manualModel);
-        const model = normalized || manualModel;
+        const model = resolveModelForChoice(choice, manualModel);
         const keys = props.seatKeys[i] || {};
         if (choice.startsWith('ai:') && !model) {
           throw new Error(`${seatName(i)} 的 ${choiceLabel(choice)} 需填写模型名称`);
@@ -7298,7 +7320,7 @@ function DdzRenderer() {
     });
     setSeatModels((arr) => {
       const copy = [...arr];
-      copy[index] = '';
+      copy[index] = defaultModelForChoice(choice);
       return copy;
     });
   }, []);
@@ -7307,13 +7329,14 @@ function DdzRenderer() {
       const choice = seats[i];
       const blocks: ReactNode[] = [];
       if (choice.startsWith('ai:')) {
+        const preset = defaultModelForChoice(choice);
         blocks.push(
           <label key={`model-${i}`} style={{ display: 'block', marginBottom: 6 }}>
             模型（必填）
             <input
               type="text"
               value={seatModels[i]}
-              placeholder="请输入模型名称"
+              placeholder={preset ? `默认：${preset}` : '请输入模型名称'}
               onChange={(e) => {
                 const v = e.target.value;
                 setSeatModels((arr) => {
@@ -7324,7 +7347,9 @@ function DdzRenderer() {
               }}
               style={{ width: '100%' }}
             />
-            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>需填写提供方的模型或版本名称。</div>
+            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>
+              {preset ? `默认使用最新版本：${preset}，可修改。` : '需填写提供方的模型或版本名称。'}
+            </div>
           </label>,
         );
       }
@@ -7441,8 +7466,7 @@ function DdzRenderer() {
       const choice = seats[i] as BotChoice;
       if (!choice) return '';
       const modelInput = Array.isArray(seatModels) ? seatModels[i] : '';
-      const normalizedModel = normalizeModelForProvider(choice, modelInput || '')
-        || (modelInput || '');
+      const normalizedModel = resolveModelForChoice(choice, modelInput || '');
       const base = readProviderBase(choice, seatKeys?.[i]);
       const identity = makeThoughtIdentity(choice, normalizedModel, base);
       const label = thoughtLabelForIdentity(identity);
