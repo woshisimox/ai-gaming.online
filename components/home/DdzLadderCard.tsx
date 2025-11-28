@@ -85,18 +85,27 @@ export default function DdzLadderCard({ refreshToken, lang }: { refreshToken: nu
   }, []);
 
   const labelForDisplay = (label: string) => displayDdzParticipantLabel(label) || label;
+  const normalizeLabel = (rawLabel: string) => {
+    const displayLabel = labelForDisplay(rawLabel);
+    const normalized = displayLabel
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/[\s\p{P}\p{Z}]+/gu, '');
+    return normalized || displayLabel.toLocaleLowerCase();
+  };
 
   const dedupedPlayers = useMemo(() => {
     const merged = new Map<string, DdzLadderPlayer>();
     for (const player of players) {
-      const normalizedLabel = labelForDisplay(player.label);
+      const normalizedLabel = normalizeLabel(player.label);
+      const displayLabel = labelForDisplay(player.label);
       const existing = merged.get(normalizedLabel);
       if (!existing) {
-        merged.set(normalizedLabel, { ...player, label: normalizedLabel });
+        merged.set(normalizedLabel, { ...player, label: displayLabel });
       } else {
         const combinedMatches = (existing.matches || 0) + (player.matches || 0);
         const preferred = existing.matches >= player.matches ? existing : player;
-        merged.set(normalizedLabel, { ...preferred, label: normalizedLabel, matches: combinedMatches });
+        merged.set(normalizedLabel, { ...preferred, label: displayLabel, matches: combinedMatches });
       }
     }
     return Array.from(merged.values());
