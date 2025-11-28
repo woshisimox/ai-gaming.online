@@ -357,7 +357,7 @@ if (typeof document !== 'undefined' && !document.body.hasAttribute('data-i18n-cl
 }
 
 
-type Four2Policy = 'both' | '2singles' | '2pairs';
+type Four2Policy = 'both' | '2singles' | '2pairs' | 'trio' | 'single';
 type SplitStrategy = 'balanced' | 'aggressive' | 'defensive';
 type CoopMetric = 'sync' | 'tempo' | 'support';
 type BotChoice =
@@ -471,10 +471,22 @@ function sanitizeKnockoutSettings(raw: any): KnockoutSettings {
   if (Number.isFinite(start)) next.startScore = start;
   if (typeof base.bid === 'boolean') next.bid = base.bid;
   if (typeof base.farmerCoop === 'boolean') next.farmerCoop = base.farmerCoop;
-  if (base.four2 === 'both' || base.four2 === '2singles' || base.four2 === '2pairs') {
-    next.four2 = base.four2;
+  if (base.four2 === 'both') {
+    next.four2 = 'both';
+  } else if (base.four2 === 'single' || base.four2 === '2singles') {
+    next.four2 = 'single';
+  } else if (base.four2 === 'trio' || base.four2 === '2pairs') {
+    next.four2 = 'trio';
   }
   return next;
+}
+
+type CanonicalFour2Policy = 'both' | '2singles' | '2pairs';
+
+function normalizeFour2Policy(value: Four2Policy): CanonicalFour2Policy {
+  if (value === 'single' || value === '2singles') return '2singles';
+  if (value === 'trio' || value === '2pairs') return '2pairs';
+  return 'both';
 }
 
 function makeKnockoutEntryId() {
@@ -2721,7 +2733,7 @@ function KnockoutPanel() {
       seatMeta,
       farmerCoop,
       bid,
-      four2,
+      four2: normalizeFour2Policy(four2),
       startScore,
       overtimeCount: overtimeCountRef.current,
       placementsDesc,
@@ -3134,14 +3146,14 @@ function KnockoutPanel() {
               style={{ flex:'1 1 160px', minWidth:0 }}
             >
               <option value="both">{lang === 'en' ? 'Allowed' : '都可'}</option>
-              <option value="2singles">{lang === 'en' ? 'Two singles' : '两张单牌'}</option>
-              <option value="2pairs">{lang === 'en' ? 'Two pairs' : '两对'}</option>
+              <option value="trio">{lang === 'en' ? 'Bomb / trio only' : '仅炸弹 / 三带'}</option>
+              <option value="single">{lang === 'en' ? 'Single cards only' : '仅单牌'}</option>
             </select>
           </label>
           <div style={{ gridColumn:'1 / -1', fontSize:12, color:'#6b7280' }}>
             {lang === 'en'
-              ? 'Applies to each elimination trio per round.'
-              : '用于本轮每组三名选手的对局局数。'}
+              ? 'Matches the regular-mode rule for four-with-two combinations.'
+              : '与常规赛的 4 带 2 规则保持一致。'}
           </div>
         </div>
       </div>
@@ -5297,6 +5309,8 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         roundBaseTotalsRef.current = [preRoundTotals[0], preRoundTotals[1], preRoundTotals[2]] as [number, number, number];
       }
 
+      const four2Setting = normalizeFour2Policy(props.four2);
+
       const r = await fetch('/api/stream_ndjson', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -5306,7 +5320,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
           seatDelayMs: props.seatDelayMs,
           enabled: props.enabled,
           bid: props.bid,
-          four2: props.four2,
+          four2: four2Setting,
           seats: specs,
           clientTraceId: traceId,
           stopBelowZero: true,
