@@ -916,45 +916,85 @@ for await (const ev of (iter as any)) {
     // 初始发牌/地主
     const isInitLike = ev?.type === 'init' || (ev?.type === 'state' && ev?.kind === 'init');
     if (!sentInit && isInitLike) {
-      sentInit = true;
       const payload = (ev && typeof ev.payload === 'object') ? ev.payload : {};
+      const stateObj = (ev && typeof ev.state === 'object') ? ev.state : {};
+      const initObj = (ev && typeof ev.init === 'object') ? ev.init : {};
       const rawLandlord = (typeof ev.landlordIdx === 'number')
         ? ev.landlordIdx
         : (typeof ev.landlord === 'number')
           ? ev.landlord
           : (typeof (payload as any).landlordIdx === 'number')
             ? (payload as any).landlordIdx
-            : (typeof (payload as any).landlord === 'number' ? (payload as any).landlord : null);
-      landlordIdx = (typeof rawLandlord === 'number' && rawLandlord >= 0) ? rawLandlord : -1;
-      const initHands = Array.isArray(ev?.hands)
+            : (typeof (payload as any).landlord === 'number')
+              ? (payload as any).landlord
+              : (typeof (stateObj as any).landlordIdx === 'number')
+                ? (stateObj as any).landlordIdx
+                : (typeof (stateObj as any).landlord === 'number')
+                  ? (stateObj as any).landlord
+                  : (typeof (initObj as any).landlordIdx === 'number')
+                    ? (initObj as any).landlordIdx
+                    : (typeof (initObj as any).landlord === 'number' ? (initObj as any).landlord : null);
+      const initHandsRaw = Array.isArray(ev?.hands)
         ? ev.hands
-        : (Array.isArray((payload as any).hands) ? (payload as any).hands : []);
-      const initBottom = Array.isArray(ev?.bottom)
+        : (Array.isArray((payload as any).hands)
+          ? (payload as any).hands
+          : (Array.isArray((stateObj as any).hands)
+            ? (stateObj as any).hands
+            : (Array.isArray((initObj as any).hands) ? (initObj as any).hands : [])));
+      const initBottomRaw = Array.isArray(ev?.bottom)
         ? ev.bottom
-        : (Array.isArray((payload as any).bottom) ? (payload as any).bottom : []);
-      // 修复：添加 landlord 字段确保前端能正确识别地主
-      writeLine(res, {
-        type:'init',
-        landlordIdx: rawLandlord,
-        landlord: rawLandlord,
-        bottom: initBottom,
-        hands: initHands
-      });
-      try {
+        : (Array.isArray((payload as any).bottom)
+          ? (payload as any).bottom
+          : (Array.isArray((stateObj as any).bottom)
+            ? (stateObj as any).bottom
+            : (Array.isArray((initObj as any).bottom) ? (initObj as any).bottom : [])));
+
+      const hasHands = Array.isArray(initHandsRaw)
+        && initHandsRaw.length === 3
+        && initHandsRaw.every((h: any) => Array.isArray(h));
+      if (!hasHands) {
+        try {
+          writeLine(res, {
+            type: 'event',
+            kind: 'init-incomplete',
+            sourceType: ev?.type,
+            sourceKind: ev?.kind,
+            handShape: Array.isArray(initHandsRaw) ? `len=${initHandsRaw.length}` : typeof initHandsRaw,
+          });
+        } catch {}
+      } else {
+        sentInit = true;
+      }
+
+      const initHands = hasHands ? (initHandsRaw as string[][]) : [[], [], []];
+      const initBottom = Array.isArray(initBottomRaw) ? (initBottomRaw as string[]) : [];
+      landlordIdx = (typeof rawLandlord === 'number' && rawLandlord >= 0) ? rawLandlord : -1;
+
+      if (hasHands) {
+        // 修复：添加 landlord 字段确保前端能正确识别地主
         writeLine(res, {
-          type: 'event',
-          kind: 'init-normalized',
-          sourceType: ev?.type,
-          sourceKind: ev?.kind,
+          type:'init',
+          landlordIdx: rawLandlord,
           landlord: rawLandlord,
-          handCounts: [0, 1, 2].map((i) => (Array.isArray(initHands?.[i]) ? initHands[i].length : 0)),
-          bottomCount: Array.isArray(initBottom) ? initBottom.length : 0,
+          bottom: initBottom,
+          hands: initHands
         });
-      } catch {}
-      (globalThis as any).__DDZ_SEEN.length = 0;
-      (globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]];
+        try {
+          writeLine(res, {
+            type: 'event',
+            kind: 'init-normalized',
+            sourceType: ev?.type,
+            sourceKind: ev?.kind,
+            landlord: rawLandlord,
+            handCounts: [0, 1, 2].map((i) => (Array.isArray(initHands?.[i]) ? initHands[i].length : 0)),
+            bottomCount: Array.isArray(initBottom) ? initBottom.length : 0,
+          });
+        } catch {}
+        (globalThis as any).__DDZ_SEEN.length = 0;
+        (globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]];
+      }
       // —— 明牌后额外加倍阶段：从地主开始依次决定是否加倍 ——
-if (landlordIdx >= 0) try {
+if (hasHands && landlordIdx >= 0) try {
   const __rank = (c:string)=>(c==='x'||c==='X')?c:c.slice(-1);
   const __count = (cs:string[])=>{ const m=new Map<string,number>(); for(const c of cs){const r=__rank(c); m.set(r,(m.get(r)||0)+1);} return m; };
   const bottom: string[] = Array.isArray(initBottom) ? initBottom as string[] : [];
@@ -981,7 +1021,9 @@ if (landlordIdx >= 0) try {
     writeLine(res, { type:'event', kind:'multiplier-sync', multiplier: extraMult });
   }
 } catch {}
+if (hasHands) {
 continue;
+}
     }
 
     // 兼容两种出牌事件：turn 或 event:play
