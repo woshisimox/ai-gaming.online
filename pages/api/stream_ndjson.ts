@@ -851,19 +851,31 @@ async function runOneRoundWithGuard(
 
 for await (const ev of (iter as any)) {
     // 初始发牌/地主
-    if (!sentInit && ev?.type==='init') {
+    const isInitLike = ev?.type === 'init' || (ev?.type === 'state' && ev?.kind === 'init');
+    if (!sentInit && isInitLike) {
       sentInit = true;
+      const payload = (ev && typeof ev.payload === 'object') ? ev.payload : {};
       const rawLandlord = (typeof ev.landlordIdx === 'number')
         ? ev.landlordIdx
-        : (typeof ev.landlord === 'number' ? ev.landlord : null);
+        : (typeof ev.landlord === 'number')
+          ? ev.landlord
+          : (typeof (payload as any).landlordIdx === 'number')
+            ? (payload as any).landlordIdx
+            : (typeof (payload as any).landlord === 'number' ? (payload as any).landlord : null);
       landlordIdx = (typeof rawLandlord === 'number' && rawLandlord >= 0) ? rawLandlord : -1;
+      const initHands = Array.isArray(ev?.hands)
+        ? ev.hands
+        : (Array.isArray((payload as any).hands) ? (payload as any).hands : []);
+      const initBottom = Array.isArray(ev?.bottom)
+        ? ev.bottom
+        : (Array.isArray((payload as any).bottom) ? (payload as any).bottom : []);
       // 修复：添加 landlord 字段确保前端能正确识别地主
       writeLine(res, {
         type:'init',
         landlordIdx: rawLandlord,
         landlord: rawLandlord,
-        bottom: ev.bottom,
-        hands: ev.hands
+        bottom: initBottom,
+        hands: initHands
       });
       (globalThis as any).__DDZ_SEEN.length = 0;
       (globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]];
