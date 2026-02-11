@@ -6598,30 +6598,73 @@ if (m.type === 'event' && m.kind === 'play') {
   }));
 
   const remainingGames = Math.max(0, (props.rounds || 1) - finishedCount);
+  const allArchiveFileRef = useRef<HTMLInputElement | null>(null);
+  const handleAllArchiveUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result || '{}'));
+        window.dispatchEvent(new CustomEvent('ddz-all-upload', { detail: obj }));
+      } catch (err) {
+        console.error('[ALL-UPLOAD] parse error', err);
+      } finally {
+        if (allArchiveFileRef.current) allArchiveFileRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
 
   const controlsContent = (
-    <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:8 }}>
-      <button
-        type="button"
-        onClick={start}
-        disabled={running}
-        className={cx(styles.pillButton, styles.variantPrimary)}
-      >开始</button>
-      <button
-        type="button"
-        onClick={togglePause}
-        disabled={!running}
-        className={cx(styles.pillButton, styles.variantAmber)}
-      >{paused ? '继续' : '暂停'}</button>
-      <button
-        type="button"
-        onClick={stop}
-        disabled={!running}
-        className={cx(styles.pillButton, styles.variantDanger)}
-      >停止</button>
-      <span style={{ display:'inline-flex', alignItems:'center', padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:8, fontSize:12, background:'#fff' }}>
-        剩余局数：{remainingGames}
-      </span>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:8, width:'100%' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <button
+          type="button"
+          onClick={start}
+          disabled={running}
+          className={cx(styles.pillButton, styles.variantPrimary)}
+        >开始</button>
+        <button
+          type="button"
+          onClick={togglePause}
+          disabled={!running}
+          className={cx(styles.pillButton, styles.variantAmber)}
+        >{paused ? '继续' : '暂停'}</button>
+        <button
+          type="button"
+          onClick={stop}
+          disabled={!running}
+          className={cx(styles.pillButton, styles.variantDanger)}
+        >停止</button>
+        <span style={{ display:'inline-flex', alignItems:'center', padding:'4px 8px', border:'1px solid #e5e7eb', borderRadius:8, fontSize:12, background:'#fff' }}>
+          剩余局数：{remainingGames}
+        </span>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap', justifyContent:'flex-end' }}>
+        <input
+          ref={allArchiveFileRef}
+          type="file"
+          accept="application/json"
+          style={{ display:'none' }}
+          onChange={handleAllArchiveUpload}
+        />
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('ddz-all-save'))}
+          className={cx(styles.pillButton, styles.variantPrimary)}
+        >{lang === 'en' ? 'Save' : '存档'}</button>
+        <button
+          type="button"
+          onClick={() => allArchiveFileRef.current?.click()}
+          className={cx(styles.pillButton, styles.variantAmber)}
+        >{lang === 'en' ? 'Upload' : '上传'}</button>
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event('ddz-all-refresh'))}
+          className={cx(styles.pillButton, styles.variantDanger)}
+        >{lang === 'en' ? 'Refresh' : '刷新'}</button>
+      </div>
     </div>
   );
 
