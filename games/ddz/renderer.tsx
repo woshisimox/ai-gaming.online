@@ -7634,6 +7634,9 @@ function DdzRenderer() {
   }, [bid, farmerCoop, four2, lang, rounds, seatDelayMs, seatKeys, seatModels, seats, seatInfoLabels, startScore, turnTimeoutSecs]);
   // —— 统一统计（TS + Radar + 出牌评分 + 评分统计）外层上传入口 ——
   const allFileRef = useRef<HTMLInputElement|null>(null);
+  const ladderFileRef = useRef<HTMLInputElement|null>(null);
+  const radarFileRef = useRef<HTMLInputElement|null>(null);
+  const exportDate = () => new Date().toISOString().slice(0, 10);
   const handleAllFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
     const rd = new FileReader();
@@ -7648,6 +7651,74 @@ function DdzRenderer() {
       }
     };
     rd.readAsText(f);
+  };
+  const handleLadderUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const obj = JSON.parse(String(rd.result || '{}'));
+        const ladder = obj?.schema === 'ddz-ladder@1' ? obj : (obj?.schema === 'ddz-all@1' ? obj?.ladder : null);
+        if (ladder?.schema !== 'ddz-ladder@1') throw new Error('invalid ladder schema');
+        localStorage.setItem('ddz_ladder_store_v1', JSON.stringify(ladder));
+        window.dispatchEvent(new Event('ddz-all-refresh'));
+      } catch (err) {
+        console.error('[LADDER-UPLOAD] parse error', err);
+      } finally {
+        if (ladderFileRef.current) ladderFileRef.current.value = '';
+      }
+    };
+    rd.readAsText(f);
+  };
+  const handleLadderSave = () => {
+    try {
+      const raw = localStorage.getItem('ddz_ladder_store_v1');
+      const payload = raw ? JSON.parse(raw) : { schema: 'ddz-ladder@1', updatedAt: new Date().toISOString(), players: {} };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ddz_ladder_${exportDate()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('[LADDER-SAVE] failed', err);
+    }
+  };
+  const handleRadarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try {
+        const obj = JSON.parse(String(rd.result || '{}'));
+        const radar = obj?.schema === 'ddz-radar@1' ? obj : (obj?.schema === 'ddz-all@1' ? obj?.radar : null);
+        if (radar?.schema !== 'ddz-radar@1') throw new Error('invalid radar schema');
+        localStorage.setItem('ddz_radar_store_v1', JSON.stringify(radar));
+        window.dispatchEvent(new Event('ddz-all-refresh'));
+      } catch (err) {
+        console.error('[RADAR-UPLOAD] parse error', err);
+      } finally {
+        if (radarFileRef.current) radarFileRef.current.value = '';
+      }
+    };
+    rd.readAsText(f);
+  };
+  const handleRadarSave = () => {
+    try {
+      const raw = localStorage.getItem('ddz_radar_store_v1');
+      const payload = raw ? JSON.parse(raw) : { schema: 'ddz-radar@1', updatedAt: new Date().toISOString(), players: {} };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type:'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ddz_radar_${exportDate()}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('[RADAR-SAVE] failed', err);
+    }
   };
   const isRegularMode = matchMode === 'regular';
   const regularLabel = lang === 'en' ? 'Regular match' : '常规赛';
@@ -7800,7 +7871,7 @@ function DdzRenderer() {
                       </select>
                     </label>
                     <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
-                      <div className={styles.fieldLabel}>天梯 / TrueSkill</div>
+                      <div className={styles.fieldLabel}>统一存档（TS / 天梯 / 雷达）</div>
                       <div className={styles.fieldActions}>
                         <div>
                           <input
@@ -7819,6 +7890,54 @@ function DdzRenderer() {
                         <button
                           type="button"
                           onClick={()=>window.dispatchEvent(new Event('ddz-all-save'))}
+                          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                        >存档</button>
+                      </div>
+                    </div>
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>天梯图</div>
+                      <div className={styles.fieldActions}>
+                        <div>
+                          <input
+                            ref={ladderFileRef}
+                            type="file"
+                            accept="application/json"
+                            className={styles.hiddenFileInput}
+                            onChange={handleLadderUpload}
+                          />
+                          <button
+                            type="button"
+                            onClick={()=>ladderFileRef.current?.click()}
+                            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                          >上传</button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleLadderSave}
+                          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                        >存档</button>
+                      </div>
+                    </div>
+                    <div className={cx(styles.fieldGroup, styles.fieldGroupFull)}>
+                      <div className={styles.fieldLabel}>雷达图</div>
+                      <div className={styles.fieldActions}>
+                        <div>
+                          <input
+                            ref={radarFileRef}
+                            type="file"
+                            accept="application/json"
+                            className={styles.hiddenFileInput}
+                            onChange={handleRadarUpload}
+                          />
+                          <button
+                            type="button"
+                            onClick={()=>radarFileRef.current?.click()}
+                            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+                          >上传</button>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleRadarSave}
                           className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
                         >存档</button>
                       </div>
