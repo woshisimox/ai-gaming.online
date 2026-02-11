@@ -387,6 +387,40 @@ type RunBody = {
 };
 
 /* ========== Bot 工厂 ========== */
+
+function summarizeBotCtx(ctx: any, phase: string) {
+  const seenBySeat = Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[], [], []];
+  const summary: any = {
+    phase,
+    seat: Number.isInteger(ctx?.seat) ? ctx.seat : null,
+    landlord: Number.isInteger(ctx?.landlord) ? ctx.landlord : null,
+    leader: Number.isInteger(ctx?.leader) ? ctx.leader : null,
+    trick: Number.isInteger(ctx?.trick) ? ctx.trick : null,
+    role: typeof ctx?.role === 'string' ? ctx.role : undefined,
+    canPass: ctx?.canPass !== false,
+    handCount: Array.isArray(ctx?.hands) ? ctx.hands.length : 0,
+    historyCount: Array.isArray(ctx?.history) ? ctx.history.length : 0,
+    currentTrickCount: Array.isArray(ctx?.currentTrick) ? ctx.currentTrick.length : 0,
+    seenCount: Array.isArray(ctx?.seen) ? ctx.seen.length : 0,
+    seenBySeatCounts: [0, 1, 2].map((i) => (Array.isArray(seenBySeat[i]) ? seenBySeat[i].length : 0)),
+    handsCount: Array.isArray(ctx?.handsCount) ? ctx.handsCount : undefined,
+  };
+
+  const req = ctx?.require;
+  if (req && typeof req === 'object') {
+    summary.require = {
+      type: typeof req.type === 'string' ? req.type : undefined,
+      len: Number.isFinite(req.len) ? req.len : undefined,
+      key: Number.isFinite(req.key) ? req.key : undefined,
+      wings: typeof req.wings === 'string' ? req.wings : undefined,
+    };
+  } else {
+    summary.require = null;
+  }
+
+  return summary;
+}
+
 function providerLabel(choice: BotChoice) {
   switch (choice) {
     case 'built-in:greedy-max': return 'GreedyMax';
@@ -624,7 +658,36 @@ function traceWrap(
     const t0 = Date.now();
     try {
       const ctxWithSeen = { ...ctx, seen: (globalThis as any).__DDZ_SEEN ?? [], seenBySeat: (globalThis as any).__DDZ_SEEN_BY_SEAT ?? [[],[],[]] };
-      try { console.debug('[CTX]', `seat=${ctxWithSeen.seat}`, `landlord=${ctxWithSeen.landlord}`, `leader=${ctxWithSeen.leader}`, `trick=${ctxWithSeen.trick}`, `seen=${ctxWithSeen.seen?.length||0}`, `seatSeen=${(ctxWithSeen.seenBySeat||[]).map((a:any)=>Array.isArray(a)?a.length:0).join('/')}`); } catch {}
+      const ctxSummary = summarizeBotCtx(ctxWithSeen, phase);
+      if (phase === 'play') {
+        try {
+          if (Array.isArray(ctxWithSeen?.hands)) {
+            const four2Policy = (ctxWithSeen?.policy?.four2 || 'both') as Four2Policy;
+            const legalMoves = generateMoves(ctxWithSeen.hands.slice(), (ctxWithSeen?.require ?? null) as Combo | null, four2Policy);
+            ctxSummary.legalMoves = legalMoves.length;
+            if (ctxWithSeen?.require && legalMoves.length <= 0 && ctxWithSeen?.canPass !== false) {
+              ctxSummary.mustPass = true;
+            }
+          }
+        } catch (err: any) {
+          ctxSummary.legalMovesError = String(err?.message || err || 'unknown');
+        }
+      }
+      try {
+        writeLine(res, {
+          type: 'event',
+          kind: 'bot-ctx',
+          seat: seatIndex,
+          by: label,
+          model: spec?.model || '',
+          phase,
+          summary: ctxSummary,
+          issuedAt: Date.now(),
+        });
+      } catch {}
+      try {
+        console.debug('[CTX]', `seat=${ctxWithSeen.seat}`, `landlord=${ctxWithSeen.landlord}`, `leader=${ctxWithSeen.leader}`, `trick=${ctxWithSeen.trick}`, `hand=${ctxSummary.handCount||0}`, `history=${ctxSummary.historyCount||0}`, `trickHistory=${ctxSummary.currentTrickCount||0}`, `seen=${ctxSummary.seenCount||0}`, `seatSeen=${(ctxSummary.seenBySeatCounts||[]).join('/')}`, `legal=${ctxSummary.legalMoves ?? '-'}`);
+      } catch {}
 
       if (isHuman) {
         const requestId = `${sessionKey}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2,8)}`;
@@ -877,14 +940,25 @@ for await (const ev of (iter as any)) {
         bottom: initBottom,
         hands: initHands
       });
+      try {
+        writeLine(res, {
+          type: 'event',
+          kind: 'init-normalized',
+          sourceType: ev?.type,
+          sourceKind: ev?.kind,
+          landlord: rawLandlord,
+          handCounts: [0, 1, 2].map((i) => (Array.isArray(initHands?.[i]) ? initHands[i].length : 0)),
+          bottomCount: Array.isArray(initBottom) ? initBottom.length : 0,
+        });
+      } catch {}
       (globalThis as any).__DDZ_SEEN.length = 0;
       (globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]];
       // —— 明牌后额外加倍阶段：从地主开始依次决定是否加倍 ——
 if (landlordIdx >= 0) try {
   const __rank = (c:string)=>(c==='x'||c==='X')?c:c.slice(-1);
   const __count = (cs:string[])=>{ const m=new Map<string,number>(); for(const c of cs){const r=__rank(c); m.set(r,(m.get(r)||0)+1);} return m; };
-  const bottom: string[] = Array.isArray(ev.bottom) ? ev.bottom as string[] : [];
-  const hands: string[][] = Array.isArray(ev.hands) ? ev.hands as string[][] : [[],[],[]];
+  const bottom: string[] = Array.isArray(initBottom) ? initBottom as string[] : [];
+  const hands: string[][] = Array.isArray(initHands) ? initHands as string[][] : [[],[],[]];
   let extraMult = 1;
   const decideExtraDouble = (seat:number)=>{
     const role = (seat===landlordIdx) ? 'landlord' : 'farmer';
