@@ -1552,7 +1552,8 @@ export function classify(cards: Label[], four2: Four2Policy = 'both'): Combo | n
           }
         } else if (rest === len*2) { // 每组三带一对
           const pairAvail = [...cnt.entries()]
-            .filter(([rv, arr]) => !planeRanks.has(rv) && arr.length >= 2).length;
+            .filter(([rv]) => !planeRanks.has(rv))
+            .reduce((acc, [, arr]) => acc + Math.floor(arr.length / 2), 0);
           if (pairAvail >= len) {
             return { type: 'plane_pair', rank: triples[i+len-1][0], len, cards: sorted(cards) };
           }
@@ -1766,13 +1767,13 @@ function buildRulesReference(): RulesReference {
     },
     triple_one: {
       label: '三带一',
-      summary: '三张相同点数 + 任意一张单牌。',
+      summary: '三张相同点数 + 任意一张单牌（如 3,3,3,5）。',
       minCards: 4,
       examples: ['♠3 ♣3 ♥3 ♠9'],
     },
     triple_pair: {
       label: '三带一对',
-      summary: '三张相同点数 + 任意一对牌。',
+      summary: '三张相同点数 + 任意一对牌（如 3,3,3,5,5）。',
       minCards: 5,
       examples: ['♠3 ♣3 ♥3 ♠9 ♣9'],
     },
@@ -1825,7 +1826,7 @@ function buildRulesReference(): RulesReference {
         maxRankSymbol: maxSeqSymbol,
         maxRankLabel: maxSeqLabel,
       },
-      notes: '每组三张需配一张额外单牌。',
+      notes: '例如 333444 可带两张单牌（如 5、6）。',
     },
     plane_pair: {
       label: '飞机带对',
@@ -1837,7 +1838,7 @@ function buildRulesReference(): RulesReference {
         maxRankSymbol: maxSeqSymbol,
         maxRankLabel: maxSeqLabel,
       },
-      notes: '每组三张需配一个对子。',
+      notes: '例如 333444 可带两对（如 55、66）。',
     },
     four_two_singles: {
       label: '四带两单',
@@ -1889,6 +1890,16 @@ function* triplesFrom(map: Map<number, Label[]>) {
   for (const [rv, arr] of [...map.entries()].sort((a,b)=>a[0]-b[0])) {
     if (arr.length >= 3) yield [arr[0], arr[1], arr[2]];
   }
+}
+function pairBucketsFrom(map: Map<number, Label[]>) {
+  const buckets: Label[][] = [];
+  for (const [, arr] of [...map.entries()].sort((a,b)=>a[0]-b[0])) {
+    const pairCount = Math.floor(arr.length / 2);
+    for (let i = 0; i < pairCount; i++) {
+      buckets.push([arr[i * 2], arr[i * 2 + 1]]);
+    }
+  }
+  return buckets;
 }
 function* bombsFrom(map: Map<number, Label[]>) {
   for (const [rv, arr] of [...map.entries()].sort((a,b)=>a[0]-b[0])) {
@@ -2012,9 +2023,8 @@ function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
     for (const [rv, arr] of cnt) for (const c of arr) singles.push(c);
     if (singles.length >= group) res.push([...core, ...singles.slice(0, group)]);
     // 带对
-    const pairs: Label[][] = [];
-    for (const [rv, arr] of cnt) if (arr.length >= 2) pairs.push([arr[0], arr[1]]);
-    if (pairs.length >= group) res.push([...core, ...pairs.slice(0, group).flat()]);
+    const pairBuckets = pairBucketsFrom(cnt);
+    if (pairBuckets.length >= group) res.push([...core, ...pairBuckets.slice(0, group).flat()]);
   }
 
   // 四带二
@@ -2025,9 +2035,12 @@ function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
       if (pool.length >= 2) res.push([...arr, ...pool.slice(0,2)]);
     }
     if (four2 === 'both' || four2 === '2pairs') {
-      const pairs: Label[][] = [];
-      for (const [r2,a2] of map) if (r2 !== rv && a2.length >= 2) pairs.push([a2[0],a2[1]]);
-      if (pairs.length >= 2) res.push([...arr, ...pairs[0], ...pairs[1]]);
+      const wingMap = new Map<number, Label[]>();
+      for (const [r2, a2] of map) {
+        if (r2 !== rv) wingMap.set(r2, a2.slice());
+      }
+      const pairBuckets = pairBucketsFrom(wingMap);
+      if (pairBuckets.length >= 2) res.push([...arr, ...pairBuckets[0], ...pairBuckets[1]]);
     }
   }
 
