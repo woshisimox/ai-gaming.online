@@ -1767,6 +1767,7 @@ const LADDER_LABEL_STYLE: CSSProperties = {
 function LadderPanel() {
   const { t, lang } = useI18n();
   const [tick, setTick] = useState(0);
+  const ladderFileRef = useRef<HTMLInputElement | null>(null);
   useEffect(()=>{
     const onAny = () => setTick(k=>k+1);
     if (typeof window !== 'undefined') {
@@ -1825,6 +1826,43 @@ function LadderPanel() {
   const playsShadow = '0 1px 2px rgba(37, 99, 235, 0.25)';
   const playsUnit = lang === 'en' ? 'games' : '局';
 
+  const handleLadderUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try {
+      const text = await f.text();
+      const obj = JSON.parse(text);
+      const ladderPayload = obj?.schema === 'ddz-ladder@1'
+        ? obj
+        : (obj?.schema === 'ddz-all@1' ? obj?.ladder : null);
+      if (ladderPayload?.schema !== 'ddz-ladder@1') {
+        throw new Error(lang === 'en' ? 'Invalid ladder archive schema.' : '积分存档格式不正确。');
+      }
+      localStorage.setItem('ddz_ladder_store_v1', JSON.stringify(ladderPayload));
+      window.dispatchEvent(new Event('ddz-all-refresh'));
+    } catch (err) {
+      console.error('[Ladder] upload parse failed', err);
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleLadderSave = () => {
+    try {
+      const raw = localStorage.getItem('ddz_ladder_store_v1');
+      const payload = raw ? JSON.parse(raw) : { schema: 'ddz-ladder@1', updatedAt: new Date().toISOString(), players: {} };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ddz_ladder_${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      console.error('[Ladder] save failed', err);
+    }
+  };
+
   return (
     <div style={{ border:'1px dashed #e5e7eb', borderRadius:8, padding:10, marginTop:10 }}>
       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
@@ -1832,6 +1870,25 @@ function LadderPanel() {
         <div style={{ fontSize:12, color:'#6b7280' }}>
           {`${t('LadderSubtitle')} · ${t('LadderRange', { K })}`}
         </div>
+      </div>
+      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
+        <input
+          ref={ladderFileRef}
+          type="file"
+          accept="application/json"
+          style={{ display:'none' }}
+          onChange={handleLadderUpload}
+        />
+        <button
+          type="button"
+          onClick={() => ladderFileRef.current?.click()}
+          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+        >{lang === 'en' ? 'Upload points' : '上传积分'}</button>
+        <button
+          type="button"
+          onClick={handleLadderSave}
+          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+        >{lang === 'en' ? 'Save points' : '存档积分'}</button>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'240px 1fr 56px', gap:8 }}>
         {itemsByScore.map((it:any)=>{
@@ -4844,7 +4901,11 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
     } catch {}
     return emptyRadarStore();
   };
-  const writeRadarStore = (_s: RadarStore) => { /* no-op: radar not persisted */ };
+  const writeRadarStore = (s: RadarStore) => {
+    try {
+      localStorage.setItem(RADAR_STORE_KEY, JSON.stringify({ ...s, updatedAt: new Date().toISOString() }));
+    } catch {}
+  };
 
   /** 用“均值 + 次数”合并（与前端 mean 聚合一致） */
   function mergeRadarAgg(prev: RadarAgg|null|undefined, inc: Score5): RadarAgg {
@@ -4986,7 +5047,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       entry.meta = { choice, ...(model ? { model } : {}), ...(base ? { baseUrl: base } : {}) };
       radarStoreRef.current.players[id] = entry;
     }
-    // writeRadarStore disabled (no radar persistence)
+    writeRadarStore(radarStoreRef.current);
   };
 
   /** 上传 Radar 存档（JSON） */
@@ -5037,9 +5098,16 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
 
   /** 导出当前 Radar 存档 */
   const handleRadarSave = () => {
-  setLog(l => [...l, '【Radar】存档已禁用（仅支持查看/刷新，不再保存到本地或 ALL 文件）。']);
-};
-;
+    writeRadarStore(radarStoreRef.current);
+    const blob = new Blob([JSON.stringify(radarStoreRef.current, null, 2)], { type:'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = makeArchiveName('_radar.json');
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1200);
+    setLog(l => [...l, '【Radar】已导出当前存档。']);
+  };
 
   // 累计画像
   const [aggMode, setAggMode] = useState<'mean'|'ewma'>('ewma');
@@ -6572,7 +6640,7 @@ type AllBundle = {
   createdAt: string;
   identities: string[];
   trueskill?: TsStore;
-  /* radar?: RadarStore;  // disabled */
+  radar?: RadarStore;
   ladder?: { schema:'ddz-ladder@1'; updatedAt:string; players: Record<string, any> };
   latency?: ThoughtStore;
   matchStats?: MatchSummaryStore;
@@ -6592,7 +6660,7 @@ const buildAllBundle = (): AllBundle => {
     createdAt: new Date().toISOString(),
     identities,
     trueskill: tsStoreRef.current,
-    /* radar excluded */
+    radar: radarStoreRef.current,
     ladder,
     latency,
     matchStats,
@@ -6605,7 +6673,11 @@ const applyAllBundleInner = (obj:any) => {
       tsStoreRef.current = obj.trueskill as TsStore;
       writeStore(tsStoreRef.current);
     }
-    // radar ignored for ALL upload (persistence disabled)
+    if (obj?.radar?.players) {
+      radarStoreRef.current = obj.radar as RadarStore;
+      writeRadarStore(radarStoreRef.current);
+      applyRadarFromStoreByRole(landlordRef.current, 'ALL上传');
+    }
 
     if (obj?.ladder?.schema === 'ddz-ladder@1') {
       try { localStorage.setItem('ddz_ladder_store_v1', JSON.stringify(obj.ladder)); } catch {}
@@ -6688,7 +6760,29 @@ const handleAllSaveInner = () => {
       <Section title="战术画像（累计，0~5）">
         {/* Radar：上传 / 存档 / 刷新 */}
         <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-<div style={{ fontSize:12, color:'#6b7280' }}>按“内置/AI+模型/版本(+HTTP Base)”识别，并区分地主/农民。</div>
+          <input
+            ref={radarFileRef}
+            type="file"
+            accept="application/json"
+            style={{ display:'none' }}
+            onChange={handleRadarUpload}
+          />
+          <button
+            type="button"
+            onClick={() => radarFileRef.current?.click()}
+            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+          >{lang === 'en' ? 'Upload' : '上传'}</button>
+          <button
+            type="button"
+            onClick={handleRadarSave}
+            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+          >{lang === 'en' ? 'Save' : '存档'}</button>
+          <button
+            type="button"
+            onClick={() => applyRadarFromStoreByRole(landlordRef.current, '手动刷新')}
+            className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
+          >{lang === 'en' ? 'Refresh' : '刷新'}</button>
+          <div style={{ fontSize:12, color:'#6b7280' }}>按“内置/AI+模型/版本(+HTTP Base)”识别，并区分地主/农民。</div>
         </div>
 
         <RadarPanel
@@ -8200,4 +8294,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
