@@ -394,3 +394,105 @@
   }
 }
 
+
+
+.spectatorTableWrap {
+  border-radius: 18px;
+  padding: 14px;
+  background: radial-gradient(circle at center, #194b88 0%, #0b2d59 62%, #0a1e3d 100%);
+  border: 2px solid rgba(251, 191, 36, 0.5);
+  box-shadow: inset 0 0 32px rgba(15, 23, 42, 0.45), 0 14px 36px rgba(15, 23, 42, 0.2);
+  color: #e2e8f0;
+  height: 720px;
+  display: grid;
+  grid-template-rows: 210px 1fr 210px;
+  gap: 12px;
+}
+
+.spectatorTopSeats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.spectatorSeatCard,
+.spectatorBottomSeat {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: rgba(15, 23, 42, 0.45);
+  padding: 10px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.spectatorSeatHandArea {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.spectatorCenterArea {
+  border-radius: 12px;
+  border: 1px solid rgba(253, 224, 71, 0.45);
+  background: rgba(30, 41, 59, 0.55);
+  padding: 10px;
+  text-align: center;
+}
+
+.spectatorCenterTitle {
+  font-weight: 800;
+  color: #fde68a;
+  margin-bottom: 8px;
+}
+
+.spectatorCenterBody {
+  height: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  overflow: auto;
+}
+
+.spectatorBottomCardsArea {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.24);
+  min-height: 108px;
+  overflow: auto;
+}
+
+.spectatorBottomCardsTitle {
+  color: #cbd5e1;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.spectatorBottomCardsPlaceholder {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.spectatorSeatHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.spectatorSeatCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 24px;
+  border-radius: 999px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(15, 23, 42, 0.6);
+  font-weight: 800;
+  color: #f8fafc;
+}
+
