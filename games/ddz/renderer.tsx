@@ -7170,23 +7170,25 @@ const handleAllSaveInner = () => {
         </Section>
       )}
 
-      <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))
-          }
-        </div>
-      </Section>
+      {!spectatorView && (
+        <Section title="出牌">
+          <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
+            {plays.length === 0
+              ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
+              : plays.map((p, idx) => (
+                <PlayRow
+                  key={idx}
+                  seat={p.seat}
+                  move={p.move}
+                  cards={p.cards}
+                  reason={p.reason}
+                  showReason={canDisplaySeatReason(p.seat)}
+                />
+              ))
+            }
+          </div>
+        </Section>
+      )}
 
       <Section title="结果">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
