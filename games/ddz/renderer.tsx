@@ -6863,7 +6863,9 @@ const handleAllSaveInner = () => {
                     <SeatTitle i={seat} landlord={landlord === seat} />
                     <span className={styles.spectatorSeatCount}>{totals[seat]}</span>
                   </div>
-                  <Hand cards={hands[seat]} />
+                  <div className={styles.spectatorSeatHandArea}>
+                    <Hand cards={hands[seat]} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -6882,25 +6884,44 @@ const handleAllSaveInner = () => {
               })() : (
                 <div className={styles.spectatorCenterBody}>{lang === 'en' ? 'Waiting for first action…' : '等待首个出牌动作…'}</div>
               )}
+              <div className={styles.spectatorBottomCardsArea}>
+                <div className={styles.spectatorBottomCardsTitle}>
+                  {lang === 'en' ? 'Bottom cards' : '底牌'}
+                  {typeof bottomInfo.landlord === 'number' ? ` · ${lang === 'en' ? 'Landlord' : '地主'} ${seatLabel(bottomInfo.landlord, lang)}` : ''}
+                </div>
+                {bottomInfo.cards.length ? (
+                  <div style={{ display:'flex', gap:6, justifyContent:'center', flexWrap:'wrap' }}>
+                    {bottomInfo.cards.map((c, idx) => (
+                      <Card key={`spectator-bottom-${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
+                    ))}
+                  </div>
+                ) : (
+                  <div className={styles.spectatorBottomCardsPlaceholder}>
+                    {lang === 'en' ? 'Bottom cards pending…' : '底牌待发牌后显示…'}
+                  </div>
+                )}
+              </div>
             </div>
             <div className={styles.spectatorBottomSeat}>
               <div className={styles.spectatorSeatHeader}>
                 <SeatTitle i={2} landlord={landlord === 2} />
                 <span className={styles.spectatorSeatCount}>{totals[2]}</span>
               </div>
-              <Hand cards={hands[2]} />
+              <div className={styles.spectatorSeatHandArea}>
+                <Hand cards={hands[2]} />
+              </div>
             </div>
           </div>
         </Section>
       )}
 
-      <Section title="手牌">
+      {!spectatorView && <Section title="手牌">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
           {[0,1,2].map(i => {
             const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
             const seatInteractive = isHumanTurn && !humanExpired;
             const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = spectatorView ? false : (revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false));
+            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
             return (
               <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
                 <div
@@ -6984,7 +7005,7 @@ const handleAllSaveInner = () => {
             );
           })}
         </div>
-      </Section>
+      </Section>}
 
       {humanRequest && (
         <Section title={lang === 'en' ? 'Human control' : '人类操作'}>
