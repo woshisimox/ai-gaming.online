@@ -6888,18 +6888,13 @@ const handleAllSaveInner = () => {
               </div>
             </div>
 
-            {[desktopSeats.left, desktopSeats.right].map((seat, idx) => {
-              const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
-              const seatInteractive = isHumanTurn && !humanExpired;
-              const latestPlay = latestPlayBySeat[seat];
-              const posClass = idx === 0 ? styles.desktopLeft : styles.desktopRight;
-              return (
-                <div key={`desk-side-${seat}`} className={cx(styles.desktopSeat, posClass)}>
-                  <div className={styles.desktopSeatHeader}>
-                    <SeatTitle i={seat} landlord={landlord === seat} />
-                    <span className={styles.desktopScore}>{totals[seat]}</span>
-                  </div>
-                  <div className={styles.desktopPlayBox}>
+
+            <div className={styles.desktopCenter}>
+              {(() => {
+                const seat = desktopSeats.left;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayLeft)}>
                     {latestPlay == null ? (
                       <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
                     ) : latestPlay.move === 'pass' ? (
@@ -6907,6 +6902,50 @@ const handleAllSaveInner = () => {
                     ) : (
                       <Hand cards={latestPlay.cards || []} />
                     )}
+                  </div>
+                );
+              })()}
+              {(() => {
+                const seat = desktopSeats.right;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayRight)}>
+                    {latestPlay == null ? (
+                      <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
+                    ) : latestPlay.move === 'pass' ? (
+                      <span>{lang === 'en' ? 'Pass' : '过'}</span>
+                    ) : (
+                      <Hand cards={latestPlay.cards || []} />
+                    )}
+                  </div>
+                );
+              })()}
+              {(() => {
+                const seat = desktopSeats.bottom;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayBottom)}>
+                    {latestPlay == null ? (
+                      <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
+                    ) : latestPlay.move === 'pass' ? (
+                      <span>{lang === 'en' ? 'Pass' : '过'}</span>
+                    ) : (
+                      <Hand cards={latestPlay.cards || []} />
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {[desktopSeats.left, desktopSeats.right].map((seat, idx) => {
+              const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
+              const seatInteractive = isHumanTurn && !humanExpired;
+              const posClass = idx === 0 ? styles.desktopLeft : styles.desktopRight;
+              return (
+                <div key={`desk-side-${seat}`} className={cx(styles.desktopSeat, posClass)}>
+                  <div className={styles.desktopSeatHeader}>
+                    <SeatTitle i={seat} landlord={landlord === seat} />
+                    <span className={styles.desktopScore}>{totals[seat]}</span>
                   </div>
                   <div className={styles.desktopHandBox}>
                     <Hand
@@ -6927,21 +6966,11 @@ const handleAllSaveInner = () => {
                 const seat = desktopSeats.bottom;
                 const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
                 const seatInteractive = isHumanTurn && !humanExpired;
-                const latestPlay = latestPlayBySeat[seat];
-                return (
+                  return (
                   <>
                     <div className={styles.desktopSeatHeader}>
                       <SeatTitle i={seat} landlord={landlord === seat} />
                       <span className={styles.desktopScore}>{totals[seat]}</span>
-                    </div>
-                    <div className={styles.desktopPlayBox}>
-                      {latestPlay == null ? (
-                        <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
-                      ) : latestPlay.move === 'pass' ? (
-                        <span>{lang === 'en' ? 'Pass' : '过'}</span>
-                      ) : (
-                        <Hand cards={latestPlay.cards || []} />
-                      )}
                     </div>
                     <div className={styles.desktopHandBox}>
                       <Hand
