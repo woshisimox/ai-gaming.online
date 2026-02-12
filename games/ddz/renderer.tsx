@@ -3824,7 +3824,7 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
 
 const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
   'ai:openai': 'gpt-4o-mini',
-  'ai:gemini': 'gemini-1.5-flash',
+  'ai:gemini': 'gemini-2.0-flash',
   'ai:grok': 'grok-2-latest',
   'ai:kimi': 'kimi-k2-0905-preview',
   'ai:qwen': 'qwen-plus',
@@ -4966,7 +4966,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const LADDER_EMPTY: LadderStore = { schema:'ddz-ladder@1', updatedAt:new Date().toISOString(), players:{} };
   const LADDER_DEFAULT: LadderAgg = { n:0, sum:0, delta:0, deltaR:0, K:20, N0:20, matches:0 };
   // 历史版本曾自动注入的模型名，仅用于迁移旧版存档，避免继续显示默认版本号
-  const LEGACY_DEFAULT_MODELS = ['gpt-4o-mini','gemini-1.5-flash','grok-2-latest','kimi-k2-0905-preview','qwen-plus','deepseek-chat'];
+  const LEGACY_DEFAULT_MODELS = ['gpt-4o-mini','gemini-2.0-flash','gemini-1.5-flash','grok-2-latest','kimi-k2-0905-preview','qwen-plus','deepseek-chat'];
 
   function migrateLegacyLadderEntry(targetId: string, store: LadderStore): string {
     const [choice, model = '', base = ''] = String(targetId || '').split('|');
