@@ -6848,6 +6848,7 @@ const handleAllSaveInner = () => {
       })()}
 
       <Section title="手牌">
+        <div className={styles.desktopArea}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
           {[0,1,2].map(i => {
             const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
@@ -6936,6 +6937,7 @@ const handleAllSaveInner = () => {
               </div>
             );
           })}
+        </div>
         </div>
       </Section>
 
