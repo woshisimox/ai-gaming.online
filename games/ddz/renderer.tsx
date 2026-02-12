@@ -1767,7 +1767,6 @@ const LADDER_LABEL_STYLE: CSSProperties = {
 function LadderPanel() {
   const { t, lang } = useI18n();
   const [tick, setTick] = useState(0);
-  const ladderFileRef = useRef<HTMLInputElement | null>(null);
   useEffect(()=>{
     const onAny = () => setTick(k=>k+1);
     if (typeof window !== 'undefined') {
@@ -1826,42 +1825,7 @@ function LadderPanel() {
   const playsShadow = '0 1px 2px rgba(37, 99, 235, 0.25)';
   const playsUnit = lang === 'en' ? 'games' : '局';
 
-  const handleLadderUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    try {
-      const text = await f.text();
-      const obj = JSON.parse(text);
-      const ladderPayload = obj?.schema === 'ddz-ladder@1'
-        ? obj
-        : (obj?.schema === 'ddz-all@1' ? obj?.ladder : null);
-      if (ladderPayload?.schema !== 'ddz-ladder@1') {
-        throw new Error(lang === 'en' ? 'Invalid ladder archive schema.' : '积分存档格式不正确。');
-      }
-      localStorage.setItem('ddz_ladder_store_v1', JSON.stringify(ladderPayload));
-      window.dispatchEvent(new Event('ddz-all-refresh'));
-    } catch (err) {
-      console.error('[Ladder] upload parse failed', err);
-    } finally {
-      e.target.value = '';
-    }
-  };
 
-  const handleLadderSave = () => {
-    try {
-      const raw = localStorage.getItem('ddz_ladder_store_v1');
-      const payload = raw ? JSON.parse(raw) : { schema: 'ddz-ladder@1', updatedAt: new Date().toISOString(), players: {} };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `ddz_ladder_${new Date().toISOString().slice(0, 10)}.json`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) {
-      console.error('[Ladder] save failed', err);
-    }
-  };
 
   return (
     <div style={{ border:'1px dashed #e5e7eb', borderRadius:8, padding:10, marginTop:10 }}>
@@ -1870,25 +1834,6 @@ function LadderPanel() {
         <div style={{ fontSize:12, color:'#6b7280' }}>
           {`${t('LadderSubtitle')} · ${t('LadderRange', { K })}`}
         </div>
-      </div>
-      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:8 }}>
-        <input
-          ref={ladderFileRef}
-          type="file"
-          accept="application/json"
-          style={{ display:'none' }}
-          onChange={handleLadderUpload}
-        />
-        <button
-          type="button"
-          onClick={() => ladderFileRef.current?.click()}
-          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
-        >{lang === 'en' ? 'Upload points' : '上传积分'}</button>
-        <button
-          type="button"
-          onClick={handleLadderSave}
-          className={cx(styles.pillButton, styles.variantGhost, styles.tiny)}
-        >{lang === 'en' ? 'Save points' : '存档积分'}</button>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'240px 1fr 56px', gap:8 }}>
         {itemsByScore.map((it:any)=>{
