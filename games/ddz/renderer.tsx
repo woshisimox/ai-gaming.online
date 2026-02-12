@@ -6566,6 +6566,29 @@ if (m.type === 'event' && m.kind === 'play') {
     }
   }
 
+
+  const desktopSeats = useMemo(() => {
+    const base = [0, 1, 2];
+    const bottomSeat = landlord != null ? landlord : 0;
+    const others = base.filter(seat => seat !== bottomSeat);
+    return {
+      bottom: bottomSeat,
+      left: others[0] ?? ((bottomSeat + 1) % 3),
+      right: others[1] ?? ((bottomSeat + 2) % 3),
+    };
+  }, [landlord]);
+
+  const latestPlayBySeat = useMemo(() => {
+    const rec: Array<{ move:'play'|'pass'; cards?:string[] } | null> = [null, null, null];
+    for (let idx = plays.length - 1; idx >= 0; idx--) {
+      const p = plays[idx];
+      if (!p || p.seat == null || p.seat < 0 || p.seat > 2) continue;
+      if (!rec[p.seat]) rec[p.seat] = { move: p.move, cards: p.cards };
+      if (rec[0] && rec[1] && rec[2]) break;
+    }
+    return rec;
+  }, [plays]);
+
   // ===== 统一统计打包（All-in-One） =====
 type AllBundle = {
   schema: 'ddz-all@1';
@@ -6847,95 +6870,123 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
-            const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                <Hand
-                  cards={hands[i]}
-                  interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
-                  onToggle={seatInteractive ? toggleHumanCard : undefined}
-                  disabled={humanSubmitting || humanExpired}
-                  faceDown={faceDown}
-                />
+      <Section title={lang === 'en' ? 'Desktop' : '桌面'}>
+        <div className={styles.desktopArea}>
+          <div className={styles.desktopTable}>
+            <div className={cx(styles.desktopSeat, styles.desktopTop)}>
+              <div className={styles.desktopBottomTitle}>
+                {lang === 'en'
+                  ? `Bottom · Landlord ${landlord == null ? '' : seatLabel(landlord, lang)}`.trim()
+                  : `底牌 · 地主 ${landlord == null ? '' : seatLabel(landlord, lang)}`.trim()}
               </div>
-            );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                    </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
+              <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
+                {(bottomInfo.cards || []).length
+                  ? (bottomInfo.cards || []).map((c, idx) => (
+                      <Card key={`desk-bottom-${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
+                    ))
+                  : <div style={{ fontSize:12, color:'#9ca3af' }}>{lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}</div>}
+              </div>
+            </div>
+
+
+            <div className={styles.desktopCenter}>
+              {(() => {
+                const seat = desktopSeats.left;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayLeft)}>
+                    {latestPlay == null ? (
+                      <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
+                    ) : latestPlay.move === 'pass' ? (
+                      <span>{lang === 'en' ? 'Pass' : '过'}</span>
+                    ) : (
+                      <Hand cards={latestPlay.cards || []} />
+                    )}
                   </div>
-                )}
-              </div>
-            );
-          })}
+                );
+              })()}
+              {(() => {
+                const seat = desktopSeats.right;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayRight)}>
+                    {latestPlay == null ? (
+                      <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
+                    ) : latestPlay.move === 'pass' ? (
+                      <span>{lang === 'en' ? 'Pass' : '过'}</span>
+                    ) : (
+                      <Hand cards={latestPlay.cards || []} />
+                    )}
+                  </div>
+                );
+              })()}
+              {(() => {
+                const seat = desktopSeats.bottom;
+                const latestPlay = latestPlayBySeat[seat];
+                return (
+                  <div className={cx(styles.desktopCenterPlay, styles.desktopCenterPlayBottom)}>
+                    {latestPlay == null ? (
+                      <span style={{ opacity:0.7 }}>{lang === 'en' ? '(no play yet)' : '（尚无出牌）'}</span>
+                    ) : latestPlay.move === 'pass' ? (
+                      <span>{lang === 'en' ? 'Pass' : '过'}</span>
+                    ) : (
+                      <Hand cards={latestPlay.cards || []} />
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {[desktopSeats.left, desktopSeats.right].map((seat, idx) => {
+              const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
+              const seatInteractive = isHumanTurn && !humanExpired;
+              const posClass = idx === 0 ? styles.desktopLeft : styles.desktopRight;
+              return (
+                <div key={`desk-side-${seat}`} className={cx(styles.desktopSeat, posClass)}>
+                  <div className={styles.desktopSeatHeader}>
+                    <SeatTitle i={seat} landlord={landlord === seat} />
+                    <span className={styles.desktopScore}>{totals[seat]}</span>
+                  </div>
+                  <div className={styles.desktopHandBox}>
+                    <Hand
+                      cards={hands[seat]}
+                      interactive={seatInteractive}
+                      selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+                      onToggle={seatInteractive ? toggleHumanCard : undefined}
+                      disabled={humanSubmitting || humanExpired}
+                      faceDown={false}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+
+            <div className={cx(styles.desktopSeat, styles.desktopBottom)}>
+              {(() => {
+                const seat = desktopSeats.bottom;
+                const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
+                const seatInteractive = isHumanTurn && !humanExpired;
+                  return (
+                  <>
+                    <div className={styles.desktopSeatHeader}>
+                      <SeatTitle i={seat} landlord={landlord === seat} />
+                      <span className={styles.desktopScore}>{totals[seat]}</span>
+                    </div>
+                    <div className={styles.desktopHandBox}>
+                      <Hand
+                        cards={hands[seat]}
+                        interactive={seatInteractive}
+                        selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+                        onToggle={seatInteractive ? toggleHumanCard : undefined}
+                        disabled={humanSubmitting || humanExpired}
+                        faceDown={false}
+                      />
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       </Section>
 
@@ -7101,24 +7152,6 @@ const handleAllSaveInner = () => {
           </div>
         </Section>
       )}
-
-      <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))
-          }
-        </div>
-      </Section>
 
       <Section title="结果">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
@@ -8200,4 +8233,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
