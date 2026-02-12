@@ -3997,6 +3997,7 @@ const sanitizeTotalsArray = (
 const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(props, ref) {
   const { t, lang } = useI18n();
   const [running, setRunning] = useState(false);
+  const [spectatorView, setSpectatorView] = useState(false);
   const [paused, setPaused] = useState(false);
   const pauseRef = useRef(false);
   const pauseResolversRef = useRef<Array<() => void>>([]);
@@ -6541,6 +6542,11 @@ if (m.type === 'event' && m.kind === 'play') {
       >开始</button>
       <button
         type="button"
+        onClick={() => setSpectatorView(v => !v)}
+        className={cx(styles.pillButton, spectatorView ? styles.variantToggleActive : styles.variantToggleInactive)}
+      >{lang === 'en' ? (spectatorView ? 'Exit Spectate' : 'Spectate') : (spectatorView ? '退出观战' : '观战')}</button>
+      <button
+        type="button"
         onClick={togglePause}
         disabled={!running}
         className={cx(styles.pillButton, styles.variantAmber)}
@@ -6847,13 +6853,54 @@ const handleAllSaveInner = () => {
         );
       })()}
 
+      {spectatorView && (
+        <Section title={lang === 'en' ? 'Spectator Table' : '观战牌桌'}>
+          <div className={styles.spectatorTableWrap}>
+            <div className={styles.spectatorTopSeats}>
+              {[0, 1].map((seat) => (
+                <div key={`spectator-top-${seat}`} className={styles.spectatorSeatCard}>
+                  <div className={styles.spectatorSeatHeader}>
+                    <SeatTitle i={seat} landlord={landlord === seat} />
+                    <span className={styles.spectatorSeatCount}>{totals[seat]}</span>
+                  </div>
+                  <Hand cards={hands[seat]} />
+                </div>
+              ))}
+            </div>
+            <div className={styles.spectatorCenterArea}>
+              <div className={styles.spectatorCenterTitle}>{lang === 'en' ? 'Latest play' : '当前牌面'}</div>
+              {plays.length ? (() => {
+                const latest = plays[plays.length - 1];
+                return (
+                  <div className={styles.spectatorCenterBody}>
+                    <div style={{ fontWeight: 700 }}>
+                      {lang === 'en' ? 'Seat' : '座位'} {seatLabel(latest.seat, lang)} · {latest.move === 'pass' ? t('Pass') : t('Play')}
+                    </div>
+                    {latest.move === 'play' ? <Hand cards={latest.cards || []} /> : <span>{lang === 'en' ? 'No cards played' : '未出牌'}</span>}
+                  </div>
+                );
+              })() : (
+                <div className={styles.spectatorCenterBody}>{lang === 'en' ? 'Waiting for first action…' : '等待首个出牌动作…'}</div>
+              )}
+            </div>
+            <div className={styles.spectatorBottomSeat}>
+              <div className={styles.spectatorSeatHeader}>
+                <SeatTitle i={2} landlord={landlord === 2} />
+                <span className={styles.spectatorSeatCount}>{totals[2]}</span>
+              </div>
+              <Hand cards={hands[2]} />
+            </div>
+          </div>
+        </Section>
+      )}
+
       <Section title="手牌">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
           {[0,1,2].map(i => {
             const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
             const seatInteractive = isHumanTurn && !humanExpired;
             const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
+            const faceDown = spectatorView ? false : (revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false));
             return (
               <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
                 <div
@@ -8200,4 +8247,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
