@@ -6937,7 +6937,6 @@ const handleAllSaveInner = () => {
             );
           })}
         </div>
-        </div>
       </Section>
 
       {humanRequest && (
