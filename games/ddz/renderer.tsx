@@ -6848,8 +6848,7 @@ const handleAllSaveInner = () => {
       })()}
 
       <Section title="手牌">
-        <div className={styles.desktopArea}>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(260px, 1fr))', gap:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
           {[0,1,2].map(i => {
             const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
             const seatInteractive = isHumanTurn && !humanExpired;
@@ -6887,7 +6886,7 @@ const handleAllSaveInner = () => {
             );
           })}
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(260px, 1fr))', gap:8, marginTop:8 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
           {[0,1,2].map(i=>{
             const isRevealed = !!bottomInfo.revealed;
             const isLandlord = bottomInfo.landlord === i;
@@ -7122,7 +7121,6 @@ const handleAllSaveInner = () => {
         </div>
       </Section>
 
-      <div className={styles.resultDock}>
       <Section title="结果">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
           <div style={{ border:'1px solid #eee', borderRadius:8, padding:10 }}>
@@ -7151,7 +7149,6 @@ const handleAllSaveInner = () => {
           </div>
         </div>
       </Section>
-      </div>
 <div style={{ marginTop:18 }}>
         <Section title="">
   <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
@@ -7565,7 +7562,7 @@ function DdzRenderer() {
   return (<>
     <LangContext.Provider value={lang}>
       <SeatInfoContext.Provider value={seatInfoLabels}>
-        <div style={{ maxWidth: 1280, margin:'24px auto', padding:'0 16px' }} ref={mainRef} key={lang}>
+        <div style={{ maxWidth: 1080, margin:'24px auto', padding:'0 16px' }} ref={mainRef} key={lang}>
           <h1 style={{ fontSize:28, fontWeight:900, margin:'6px 0 8px', textAlign:'center' }}>斗地主 · Fight the Landlord</h1>
           <div style={{ textAlign:'center', marginBottom:16 }}>
             <span
@@ -7959,7 +7956,7 @@ function DdzRenderer() {
 
         <div ref={ladderControlsHostRef} style={{ margin:'16px 0' }} />
 
-        <div style={{ border:'1px solid #eee', borderRadius:12, padding:14, overflowX:'auto' }}>
+        <div style={{ border:'1px solid #eee', borderRadius:12, padding:14 }}>
           {/* —— 天梯图 —— */}
           <LadderPanel />
           <div style={{ fontSize:18, fontWeight:800, marginBottom:6 }}>对局</div>

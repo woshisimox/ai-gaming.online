@@ -395,16 +395,3 @@
 }
 
 
-
-.desktopArea {
-  min-width: 920px;
-}
-
-.resultDock {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.resultDock > div {
-  width: min(520px, 100%);
-}
