@@ -2,6 +2,6 @@
   "id": "mahjong",
   "name": "mahjong",
   "displayName": "麻将",
-  "maxPlayers": 3,
-  "description": "三人麻将（简化规则）：摸牌后打牌，可自摸胡牌。"
+  "maxPlayers": 4,
+  "description": "四人麻将（简化规则）：摸牌后打牌，可自摸胡牌。"
 }

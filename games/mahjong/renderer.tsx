@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { mahjongEngine, type MahjongState, type Tile } from './game';
 import styles from './renderer.module.css';
 
-const SEAT_LABELS = ['东', '南', '西'];
+const SEAT_LABELS = ['东', '南', '西', '北'];
 
 function formatTile(tile: Tile): string {
   const map: Record<string, string> = {
@@ -34,7 +34,7 @@ export default function MahjongRenderer() {
     <section className={styles.container}>
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="text-xl font-semibold text-slate-800">麻将（简化版）</h2>
-        <p className="mt-2 text-sm text-slate-600">布局和回合逻辑参考斗地主：3名玩家轮流出牌（打出1张），下家摸1张；满足胡牌牌型可点击“胡牌”。</p>
+        <p className="mt-2 text-sm text-slate-600">布局和回合逻辑参考斗地主：4名玩家（东南西北）轮流打出1张，下家摸1张；满足胡牌牌型可点击“胡牌”。</p>
         <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-700">
           <span>当前玩家：{SEAT_LABELS[state.currentPlayer]}</span>
           <span>牌墙：{state.data.wall.length}</span>

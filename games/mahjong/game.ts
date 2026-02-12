@@ -158,6 +158,7 @@ export const mahjongEngine: GameEngine<MahjongState, MahjongAction> = {
       sortTiles(deck.splice(0, 14)),
       sortTiles(deck.splice(0, 13)),
       sortTiles(deck.splice(0, 13)),
+      sortTiles(deck.splice(0, 13)),
     ];
 
     return {
