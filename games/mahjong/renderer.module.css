@@ -1,0 +1,42 @@
+.container {
+  display: grid;
+  gap: 16px;
+}
+.playerGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.playerCard {
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 12px;
+  background: white;
+}
+.current {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+}
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.tileBtn {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 4px 8px;
+  background: #f8fafc;
+  font-size: 13px;
+}
+.tileBtn:hover { background: #e2e8f0; }
+.history {
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 13px;
+}
