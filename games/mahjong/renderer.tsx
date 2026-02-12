@@ -3,6 +3,7 @@ import { mahjongEngine, type MahjongState, type Tile } from './game';
 import styles from './renderer.module.css';
 
 const SEAT_LABELS = ['东', '南', '西', '北'];
+const SEAT_CLASS = [styles.seatEast, styles.seatSouth, styles.seatWest, styles.seatNorth];
 
 function formatTile(tile: Tile): string {
   const map: Record<string, string> = {
@@ -21,6 +22,12 @@ function formatTile(tile: Tile): string {
   return `${tile[0]}${map[tile[1]]}`;
 }
 
+function seatDiscards(state: MahjongState, seat: number): Tile[] {
+  return state.data.history
+    .filter((event): event is { seat: number; type: 'discard'; tile: Tile } => event.type === 'discard' && event.seat === seat)
+    .map((event) => event.tile);
+}
+
 export default function MahjongRenderer() {
   const [state, setState] = useState<MahjongState>(() => mahjongEngine.initialState());
   const legal = useMemo(() => mahjongEngine.legalActions(state), [state]);
@@ -34,9 +41,9 @@ export default function MahjongRenderer() {
     <section className={styles.container}>
       <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="text-xl font-semibold text-slate-800">麻将（简化版）</h2>
-        <p className="mt-2 text-sm text-slate-600">布局和回合逻辑参考斗地主：4名玩家（东南西北）轮流打出1张，下家摸1张；满足胡牌牌型可点击“胡牌”。</p>
+        <p className="mt-2 text-sm text-slate-600">参考麻将台布局：东南西北四家围桌展示，四位选手手牌均为明牌；当前轮到谁，谁可点击自己的牌进行出牌。</p>
         <div className="mt-3 flex flex-wrap gap-3 text-sm text-slate-700">
-          <span>当前玩家：{SEAT_LABELS[state.currentPlayer]}</span>
+          <span>当前玩家：{SEAT_LABELS[state.currentPlayer]}家</span>
           <span>牌墙：{state.data.wall.length}</span>
           <span>回合：{state.turn}</span>
           <span>
@@ -68,54 +75,55 @@ export default function MahjongRenderer() {
         </div>
       </div>
 
-      <div className={styles.playerGrid}>
-        {state.data.hands.map((hand, seat) => (
-          <article key={seat} className={`${styles.playerCard} ${seat === state.currentPlayer ? styles.current : ''}`}>
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-700">{SEAT_LABELS[seat]}家</h3>
-              <span className="text-xs text-slate-500">手牌 {hand.length} 张</span>
-            </div>
-            <div className={styles.hand}>
-              {hand.map((tile, idx) => {
-                const canDiscard =
-                  seat === state.currentPlayer &&
-                  state.status !== 'finished' &&
-                  discardables.includes(tile);
-                return (
-                  <button
-                    key={`${tile}-${idx}`}
-                    type="button"
-                    className={styles.tileBtn}
-                    disabled={!canDiscard}
-                    onClick={() => setState((prev) => mahjongEngine.nextState(prev, { type: 'discard', tile }))}
-                  >
-                    {formatTile(tile)}
-                  </button>
-                );
-              })}
-            </div>
-          </article>
-        ))}
-      </div>
+      <div className={styles.tableBoard}>
+        <div className={styles.centerInfo}>
+          <div className="text-lg font-semibold">麻将桌</div>
+          <div className="mt-1 text-sm">当前：{SEAT_LABELS[state.currentPlayer]}家</div>
+          <div className="text-sm">牌墙：{state.data.wall.length}</div>
+          <div className="mt-2 text-xs text-slate-300">四家明牌展示</div>
+        </div>
 
-      <div className={styles.history}>
-        <h3 className="font-semibold text-slate-700">出牌记录</h3>
-        <ul className="mt-2 space-y-1">
-          {state.data.history.length === 0 ? (
-            <li className="text-slate-500">暂无记录</li>
-          ) : (
-            state.data.history
-              .slice()
-              .reverse()
-              .map((event, idx) => (
-                <li key={`${event.seat}-${idx}`}>
-                  {event.type === 'win'
-                    ? `${SEAT_LABELS[event.seat]}家：胡牌`
-                    : `${SEAT_LABELS[event.seat]}家：打出 ${formatTile(event.tile)}`}
-                </li>
-              ))
-          )}
-        </ul>
+        {state.data.hands.map((hand, seat) => {
+          const current = seat === state.currentPlayer;
+          const discards = seatDiscards(state, seat);
+          return (
+            <article key={seat} className={`${styles.seatArea} ${SEAT_CLASS[seat]} ${current ? styles.current : ''}`}>
+              <div className={styles.seatHeader}>
+                <h3 className="text-sm font-semibold">{SEAT_LABELS[seat]}家</h3>
+                <span className="text-xs text-slate-300">手牌 {hand.length}</span>
+              </div>
+
+              <div className={styles.hand}>
+                {hand.map((tile, idx) => {
+                  const canDiscard = current && state.status !== 'finished' && discardables.includes(tile);
+                  return (
+                    <button
+                      key={`${tile}-${idx}`}
+                      type="button"
+                      className={styles.tileBtn}
+                      disabled={!canDiscard}
+                      onClick={() => setState((prev) => mahjongEngine.nextState(prev, { type: 'discard', tile }))}
+                    >
+                      {formatTile(tile)}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className={styles.river}>
+                {discards.length === 0 ? (
+                  <span className="text-[11px] text-slate-400">暂无弃牌</span>
+                ) : (
+                  discards.map((tile, idx) => (
+                    <span key={`${tile}-r-${idx}`} className={styles.riverTile}>
+                      {formatTile(tile)}
+                    </span>
+                  ))
+                )}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
