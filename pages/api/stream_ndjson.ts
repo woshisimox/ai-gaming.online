@@ -601,9 +601,15 @@ function traceWrap(
       await new Promise(r => setTimeout(r, Math.min(60_000, startDelayMs)));
     }
     const phase = ctx?.phase || 'play';
-    const effectiveTimeoutMs = (isHuman && (phase === 'bid' || phase === 'double'))
-      ? Math.max(sanitizedTimeoutMs, 30_000)
-      : sanitizedTimeoutMs;
+    const effectiveTimeoutMs = (() => {
+      if (isHuman && (phase === 'bid' || phase === 'double')) {
+        return Math.max(sanitizedTimeoutMs, 30_000);
+      }
+      if (!isHuman) {
+        return Math.min(sanitizedTimeoutMs, 30_000);
+      }
+      return sanitizedTimeoutMs;
+    })();
     const callIssuedAt = Date.now();
     const callExpiresAt = callIssuedAt + effectiveTimeoutMs;
     try {
@@ -741,7 +747,7 @@ function traceWrap(
           }
         }
       } else {
-        const timeout = makeTimeout(effectiveTimeoutMs);
+        const timeout = makeTimeout(effectiveTimeoutMs, () => buildAutoTimeoutMove(ctxWithSeen));
         result = await Promise.race([ Promise.resolve(bot(ctxWithSeen)), timeout ]);
       }
     } catch (e:any) {
