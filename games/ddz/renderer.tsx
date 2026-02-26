@@ -1650,9 +1650,10 @@ type HandProps = {
   onToggle?: (index: number) => void;
   disabled?: boolean;
   faceDown?: boolean;
+  compact?: boolean;
 };
 
-function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false }: HandProps) {
+function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false, compact = false }: HandProps) {
   const { t } = useI18n();
   if (!cards || cards.length === 0) return <span style={{ opacity: 0.6 }}>{t('Empty')}</span>;
   const selected = selectedIndices ?? new Set<number>();
@@ -1667,11 +1668,39 @@ function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled 
           onClick={interactive && onToggle ? () => onToggle(idx) : undefined}
           disabled={disabled}
           hidden={faceDown && !interactive}
+          compact={compact}
         />
       ))}
     </div>
   );
 }
+
+function isBombPlay(cards?: string[]): boolean {
+  if (!Array.isArray(cards) || cards.length === 0) return false;
+  if (cards.length === 2) {
+    const ranks = cards.map((c) => rankOf(c));
+    return ranks.includes('x') && ranks.includes('X');
+  }
+  if (cards.length !== 4) return false;
+  const ranks = cards.map((c) => rankOf(c)).filter((v): v is string => !!v);
+  return ranks.length === 4 && ranks.every((r) => r === ranks[0]);
+}
+
+type TableSeatLayout = {
+  south: number;
+  east: number;
+  west: number;
+};
+
+function resolveTableSeatLayout(landlord: number | null): TableSeatLayout {
+  const south = typeof landlord === 'number' && landlord >= 0 && landlord < 3 ? landlord : 0;
+  return {
+    south,
+    east: (south + 1) % 3,
+    west: (south + 2) % 3,
+  };
+}
+
 function PlayRow({ seat, move, cards, reason, showReason = true }:{ seat:number; move:'play'|'pass'; cards?:string[]; reason?:string; showReason?:boolean }) {
   const { t, lang } = useI18n();
   const details = useContext(SeatInfoContext);
@@ -4038,6 +4067,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const [hands, setHands] = useState<string[][]>([[],[],[]]);
   const [landlord, setLandlord] = useState<number|null>(null);
   const [plays, setPlays] = useState<{seat:number; move:'play'|'pass'; cards?:string[]; reason?:string}[]>([]);
+  const [bombFx, setBombFx] = useState<{ id: number; seat: number; cards: string[] } | null>(null);
   const [multiplier, setMultiplier] = useState(1);
   const [bidMultiplier, setBidMultiplier] = useState(1);
   const [winner, setWinner] = useState<number|null>(null);
@@ -4109,6 +4139,15 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
       }
     }, timeoutMs);
   }, [bumpHandReveal]);
+
+  useEffect(() => {
+    const last = plays[plays.length - 1];
+    if (!last || last.move !== 'play' || !isBombPlay(last.cards)) return;
+    setBombFx({ id: Date.now(), seat: last.seat, cards: last.cards || [] });
+    const timer = setTimeout(() => setBombFx(null), 1200);
+    return () => clearTimeout(timer);
+  }, [plays]);
+
   const [humanRequest, setHumanRequest] = useState<HumanPrompt | null>(null);
   const [humanSelectedIdx, setHumanSelectedIdx] = useState<number[]>([]);
   const [humanSubmitting, setHumanSubmitting] = useState(false);
@@ -6847,96 +6886,74 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
+
+      <Section title={lang === 'en' ? 'Live table' : '实时牌桌'}>
+        {(() => {
+          const layout = resolveTableSeatLayout(landlord);
+          const south = layout.south;
+          const east = layout.east;
+          const west = layout.west;
+          const bottomLandlord = bottomInfo.landlord;
+          const bottomCards = bottomInfo.cards;
+          const bottomRevealed = bottomInfo.revealed;
+
+          const renderSeat = (seat: number, posClass: string, compact = false) => {
+            const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
             const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
+            const revealActive = handRevealRef.current[seat] > Date.now();
+            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(seat) : false);
+            const roleLabel = landlord === seat
+              ? (lang === 'en' ? 'Landlord' : '地主')
+              : (lang === 'en' ? 'Farmer' : '农民');
             return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
+              <div key={`table-seat-${seat}`} className={`${styles.tableSeat} ${posClass} ${landlord === seat ? styles.tableSeatLandlord : styles.tableSeatFarmer}`}>
+                <div className={styles.tableSeatHeader}>
+                  <span className={styles.tableSeatName}><SeatTitle i={seat} landlord={landlord === seat} /></span>
+                  <span className={styles.tableSeatRole}>{roleLabel}</span>
+                  <span className={styles.tableSeatScore}>{totals[seat]}</span>
                 </div>
                 <Hand
-                  cards={hands[i]}
+                  cards={hands[seat]}
                   interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
+                  selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
                   onToggle={seatInteractive ? toggleHumanCard : undefined}
                   disabled={humanSubmitting || humanExpired}
                   faceDown={faceDown}
+                  compact={compact}
                 />
               </div>
             );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                    </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
+          };
+
+          return (
+            <div className={styles.tableWrap}>
+              <div className={styles.tableFelt} />
+              {bombFx && <div key={bombFx.id} className={styles.bombFx}>💥 {lang === 'en' ? 'Bomb!' : '炸弹！'} 💥</div>}
+
+              {renderSeat(south, styles.tableSouth)}
+              {renderSeat(west, styles.tableWest, true)}
+              {renderSeat(east, styles.tableEast, true)}
+
+              <div className={styles.tableCenterPanel}>
+                <div>{lang === 'en' ? 'Clockwise: South landlord, West/East farmers' : '顺时针：南向地主，西/东向农民'}</div>
+                <div>{lang === 'en' ? `Bid x${bidMultiplier} · Mult x${multiplier}` : `叫抢 x${bidMultiplier} · 倍数 x${multiplier}`}</div>
+                <div>
+                  {bottomRevealed
+                    ? (lang === 'en' ? 'Bottom cards revealed' : '底牌已明')
+                    : (lang === 'en' ? 'Bottom cards pending reveal' : '底牌待明牌')}
+                </div>
+                {typeof bottomLandlord === 'number' && (
+                  <div>{lang === 'en' ? 'Landlord seat:' : '地主座位：'}<SeatTitle i={bottomLandlord} landlord /></div>
+                )}
+                {bottomRevealed && bottomCards.length > 0 && (
+                  <div className={styles.tableBottomCards}>
+                    {bottomCards.map((c, idx) => <Card key={`table-bottom-${idx}-${c.label}`} label={c.label} dimmed={c.used} compact />)}
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })()}
       </Section>
 
       {humanRequest && (
