@@ -6847,96 +6847,113 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
-            const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                <Hand
-                  cards={hands[i]}
-                  interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
-                  onToggle={seatInteractive ? toggleHumanCard : undefined}
-                  disabled={humanSubmitting || humanExpired}
-                  faceDown={faceDown}
-                />
+      <Section title={lang === 'en' ? 'Table view' : '牌桌视图'}>
+        {(() => {
+          const latestActions = [0, 1, 2].map((seat) => {
+            for (let idx = plays.length - 1; idx >= 0; idx--) {
+              const item = plays[idx];
+              if (item?.seat === seat) return item;
+            }
+            return null;
+          });
+          const boardSlots = [0, 2, 1];
+          return (
+            <div style={{
+              border:'2px solid #14532d',
+              borderRadius:24,
+              padding:20,
+              background:'radial-gradient(circle at 50% 35%, #166534 0%, #14532d 55%, #0f3a22 100%)',
+              boxShadow:'inset 0 0 0 2px rgba(250, 204, 21, 0.3), 0 8px 24px rgba(15, 23, 42, 0.2)',
+            }}>
+              <div style={{
+                display:'grid',
+                gridTemplateColumns:'repeat(2, minmax(0, 1fr))',
+                gap:14,
+              }}>
+                {boardSlots.map(i => {
+                  const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
+                  const seatInteractive = isHumanTurn && !humanExpired;
+                  const revealActive = handRevealRef.current[i] > Date.now();
+                  const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
+                  const latestAction = latestActions[i];
+                  const showBottomCards = !!bottomInfo.revealed && bottomInfo.landlord === i;
+                  const seatIsBottom = i === 1;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        border:`2px solid ${landlord === i ? '#f59e0b' : '#cbd5e1'}`,
+                        borderRadius:16,
+                        padding:12,
+                        background:'rgba(248, 250, 252, 0.95)',
+                        display:'flex',
+                        flexDirection:'column',
+                        minHeight: seatIsBottom ? 230 : 200,
+                        gridColumn: seatIsBottom ? '1 / -1' : undefined,
+                      }}
+                    >
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                        <SeatTitle i={i} landlord={landlord === i} />
+                        <div style={{ fontSize:24, fontWeight:800, color:'#0f172a' }}>{totals[i]}</div>
+                      </div>
+                      <Hand
+                        cards={hands[i]}
+                        interactive={seatInteractive}
+                        selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
+                        onToggle={seatInteractive ? toggleHumanCard : undefined}
+                        disabled={humanSubmitting || humanExpired}
+                        faceDown={faceDown}
+                      />
+                      <div style={{ marginTop:8, minHeight:66, borderTop:'1px dashed #cbd5e1', paddingTop:8 }}>
+                        {latestAction?.move === 'play' ? (
+                          <div style={{ display:'flex', flexWrap:'wrap' }}>
+                            {(latestAction.cards || []).map((c, idx) => <Card key={`${i}-${c}-${idx}`} label={c} compact />)}
+                          </div>
+                        ) : latestAction?.move === 'pass' ? (
+                          <div style={{ fontSize:13, color:'#64748b' }}>{lang === 'en' ? 'Pass' : '过牌'}</div>
+                        ) : (
+                          <div style={{ fontSize:13, color:'#94a3b8' }}>{lang === 'en' ? 'Waiting action...' : '等待出牌...'}</div>
+                        )}
+                      </div>
+                      {showBottomCards && (
+                        <div style={{ marginTop:8, paddingTop:8, borderTop:'1px dashed #f59e0b' }}>
+                          <div style={{ fontSize:12, color:'#a16207', marginBottom:4 }}>{lang === 'en' ? 'Bottom cards' : '底牌'}</div>
+                          <div style={{ display:'flex', flexWrap:'wrap' }}>
+                            {bottomInfo.cards.map((c, idx) => (
+                              <Card key={`bottom-${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                    </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
+              <div style={{ marginTop:12, display:'flex', justifyContent:'flex-end' }}>
+                <div style={{
+                  padding:'10px 12px',
+                  borderRadius:10,
+                  background:'rgba(2, 6, 23, 0.45)',
+                  color:'#f8fafc',
+                  fontSize:13,
+                  lineHeight:1.6,
+                }}>
+                  <div>{lang === 'en' ? `Bid x${bidMultiplier} · Multiplier x${multiplier}` : `叫抢 x${bidMultiplier} · 倍数 x${multiplier}`}</div>
+                  <div>
+                    {landlord == null
+                      ? (lang === 'en' ? 'Landlord: pending' : '地主：待定')
+                      : (lang === 'en' ? `Landlord: ${seatLabel(landlord, lang)}` : `地主：${seatLabel(landlord, lang)}`)}
                   </div>
-                )}
+                  <div>
+                    {bottomInfo.revealed
+                      ? (lang === 'en' ? 'Bottom cards revealed' : '底牌已明')
+                      : (lang === 'en' ? 'Bottom cards hidden' : '底牌未明')}
+                  </div>
+                </div>
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })()}
       </Section>
 
       {humanRequest && (
@@ -7101,24 +7118,6 @@ const handleAllSaveInner = () => {
           </div>
         </Section>
       )}
-
-      <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))
-          }
-        </div>
-      </Section>
 
       <Section title="结果">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
@@ -8200,4 +8199,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
