@@ -394,3 +394,149 @@
   }
 }
 
+
+.tableWrap {
+  position: relative;
+  min-height: 520px;
+  border-radius: 24px;
+  border: 1px solid rgba(20, 83, 45, 0.42);
+  overflow: hidden;
+  padding: 18px;
+  background: radial-gradient(circle at 45% 45%, #1e7a42 0%, #0f5132 55%, #0a3a25 100%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.08), 0 16px 36px rgba(2, 44, 34, 0.35);
+}
+
+.tableFelt {
+  position: absolute;
+  inset: 18px;
+  border-radius: 20px;
+  border: 2px solid rgba(250, 204, 21, 0.45);
+  pointer-events: none;
+}
+
+.tableSeat {
+  position: absolute;
+  width: min(42%, 520px);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+}
+
+.tableSeatLandlord {
+  border: 2px solid #f59e0b;
+}
+
+.tableSeatFarmer {
+  border: 1px solid rgba(71, 85, 105, 0.4);
+}
+
+.tableSouth {
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  width: min(72%, 760px);
+}
+
+.tableWest {
+  left: 18px;
+  top: 90px;
+}
+
+.tableEast {
+  right: 18px;
+  top: 90px;
+}
+
+.tableSeatHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tableSeatName { font-weight: 800; }
+.tableSeatRole { font-size: 12px; color: #475569; }
+.tableSeatScore {
+  margin-left: auto;
+  font-size: 18px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.tableSeatPlayArea {
+  margin-top: 8px;
+  min-height: 42px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.6);
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.tableSeatPlayPlaceholder {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.tableSeatPlayPass {
+  font-size: 14px;
+  font-weight: 700;
+  color: #475569;
+}
+
+.tableCenterPanel {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 280px;
+  text-align: center;
+  color: #e2e8f0;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 14px;
+  padding: 10px 14px;
+}
+
+.tableBottomCards {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bombFx {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  font-size: 40px;
+  font-weight: 900;
+  color: #fff7ed;
+  text-shadow: 0 0 12px rgba(239, 68, 68, 0.7), 0 0 24px rgba(249, 115, 22, 0.75);
+  animation: bombPop 1.15s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes bombPop {
+  0% { opacity: 0; transform: translate(-50%, -30%) scale(0.45) rotate(-8deg); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.18) rotate(6deg); }
+  55% { opacity: 1; transform: translate(-50%, -52%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -66%) scale(1.35); }
+}
+
+@media (max-width: 980px) {
+  .tableWrap { min-height: 640px; }
+  .tableSeat { width: calc(100% - 36px); }
+  .tableWest { left: 18px; top: 18px; }
+  .tableEast { right: 18px; top: 215px; }
+  .tableSouth { width: calc(100% - 36px); }
+  .tableCenterPanel { top: 54%; }
+}

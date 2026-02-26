@@ -12,7 +12,6 @@ import {
   type TrueSkillStore,
 } from '../../lib/game-modules/trueSkill';
 import { readLatencyStore, type LatencyStore } from '../../lib/game-modules/latencyStore';
-import { readMatchSummaryStore } from '../../lib/game-modules/matchStatsStore';
 import {
   computeDdzTotalMatches,
   readDdzLadderPlayers,
@@ -61,21 +60,13 @@ type CopyBlock = {
     trueSkillDescription: string;
     trueSkillEmpty: string;
   };
-  gobang: {
-    timestamp: string;
-    blockTitle: string;
-    blockSubtitle: string;
-    cta: string;
-    trueSkillDescription: string;
-    trueSkillEmpty: string;
-  };
 };
 
 const COPY: Record<Lang, CopyBlock> = {
   zh: {
     statsTimestamp: '实时统计',
     statsTitle: '积分 / 天梯 / 耗时',
-    statsSubtitle: '斗地主与五子棋的积分、TrueSkill、累计局数等模块化统计全部汇总在此。',
+    statsSubtitle: '斗地主的积分、TrueSkill、累计局数等模块化统计全部汇总在此。',
     latestRefreshLabel: '最新刷新',
     refreshButton: '手动刷新',
     statLabels: {
@@ -95,19 +86,11 @@ const COPY: Record<Lang, CopyBlock> = {
       trueSkillDescription: '按 CR 排序（μ - 3σ），同步展示当前斗地主 TrueSkill 天梯。',
       trueSkillEmpty: '暂无 TrueSkill 数据，完成一局斗地主后即可生成天梯。',
     },
-    gobang: {
-      timestamp: '五子棋',
-      blockTitle: 'TrueSkill / 对局统计',
-      blockSubtitle: '展示黑白双方累计胜负、TrueSkill 排名与平均耗时。',
-      cta: '进入五子棋',
-      trueSkillDescription: '按 CR 排序（μ - 3σ），实时展示黑白双方的 TrueSkill 评级。',
-      trueSkillEmpty: '暂无 TrueSkill 数据，完成一局五子棋后即可自动生成天梯。',
-    },
   },
   en: {
     statsTimestamp: 'LIVE STATS',
     statsTitle: 'Ratings · Ladder · Latency',
-    statsSubtitle: 'Modular metrics for Dou Dizhu and Gomoku are aggregated here.',
+    statsSubtitle: 'Modular metrics for Dou Dizhu are aggregated here.',
     latestRefreshLabel: 'Last refresh',
     refreshButton: 'Refresh now',
     statLabels: {
@@ -126,14 +109,6 @@ const COPY: Record<Lang, CopyBlock> = {
       ladderDescription: 'Live ΔR, match totals, and latency data from the Dou Dizhu renderer.',
       trueSkillDescription: 'CR (μ - 3σ) ordering of the Dou Dizhu TrueSkill ladder.',
       trueSkillEmpty: 'Play a Dou Dizhu round to generate the ladder.',
-    },
-    gobang: {
-      timestamp: 'Gomoku',
-      blockTitle: 'TrueSkill & Match Stats',
-      blockSubtitle: 'Summaries of black/white wins, ladder standings, and average thinking time.',
-      cta: 'Open Gomoku',
-      trueSkillDescription: 'CR (μ - 3σ) ordering of the Gomoku TrueSkill ratings.',
-      trueSkillEmpty: 'Finish a Gomoku match to populate the ladder.',
     },
   },
 };
@@ -178,9 +153,6 @@ type StatsConfig = {
   resolveMatches: MatchResolver;
 };
 
-const GOBANG_MATCH_KEY = 'gobang_match_stats_v1';
-const GOBANG_MATCH_SCHEMA = 'gobang-match-stats@1';
-
 const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
   ddz: {
     tsKey: 'ddz_ts_store_v1',
@@ -205,24 +177,6 @@ const GAME_STATS_CONFIG: Partial<Record<GameId, StatsConfig>> = {
         return map;
       }, {});
       return { total: totalMatches, detail, labelMap };
-    },
-  },
-  gobang: {
-    tsKey: 'gobang_ts_store_v1',
-    tsSchema: 'gobang-trueskill@1',
-    latencyKey: 'gobang_latency_store_v1',
-    latencySchema: 'gobang-latency@1',
-    resolveMatches: (lang) => {
-      const store = readMatchSummaryStore(GOBANG_MATCH_KEY, GOBANG_MATCH_SCHEMA);
-      const wins = store.wins || {};
-      const locale = LOCALES[lang];
-      const format = new Intl.NumberFormat(locale);
-      const detail = lang === 'zh'
-        ? `黑方 ${format.format(wins.black ?? 0)}｜白方 ${format.format(wins.white ?? 0)}｜平局 ${format.format(store.totals.draws ?? 0)}`
-        : `Black ${format.format(wins.black ?? 0)} | White ${format.format(wins.white ?? 0)} | Draws ${format.format(
-            store.totals.draws ?? 0,
-          )}`;
-      return { total: store.totals.matches ?? 0, detail };
     },
   },
 };
@@ -498,49 +452,6 @@ export default function HomeDashboard({ games, onSelectGame }: Props) {
             </div>
           </div>
 
-          <div className={styles.statsBlock}>
-            <div className={styles.blockHeader}>
-              <div>
-                <p className={styles.timestamp}>{copy.gobang.timestamp}</p>
-                <h3 className={styles.blockTitle}>{copy.gobang.blockTitle}</h3>
-                <p className={styles.blockSubtitle}>{copy.gobang.blockSubtitle}</p>
-              </div>
-              <button type="button" onClick={() => onSelectGame('gobang' as GameId)} className={styles.ctaButton}>
-                {copy.gobang.cta}
-              </button>
-            </div>
-            <dl className={styles.statsGrid}>
-              <div className={styles.statCard}>
-                <dt className={styles.statLabel}>{copy.statLabels.totalMatches}</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.totalMatches ?? null, locale)}</dd>
-                {snapshots.gobang?.matchDetail ? <p className={styles.statDetail}>{snapshots.gobang.matchDetail}</p> : null}
-              </div>
-              <div className={styles.statCard}>
-                <dt className={styles.statLabel}>{copy.statLabels.avgLatency}</dt>
-                <dd className={styles.statValue}>
-                  {snapshots.gobang?.latencyAvg != null ? `${Math.round(snapshots.gobang.latencyAvg)} ms` : '—'}
-                </dd>
-                <p className={styles.statDetail}>
-                  {copy.statLabels.samples} {formatNumber(snapshots.gobang?.latencySamples ?? null, locale)}
-                </p>
-              </div>
-              <div className={styles.statCard}>
-                <dt className={styles.statLabel}>{copy.statLabels.players}</dt>
-                <dd className={styles.statValue}>{formatNumber(snapshots.gobang?.playerCount ?? null, locale)}</dd>
-                <p className={styles.statDetail}>
-                  {copy.statLabels.updated} {formatTimestamp(snapshots.gobang?.ladderUpdatedAt, locale)}
-                </p>
-              </div>
-            </dl>
-
-            <TrueSkillTable
-              lang={lang}
-              ladder={snapshots.gobang?.ladder ?? []}
-              title={copy.trueSkillTitle}
-              description={copy.gobang.trueSkillDescription}
-              emptyHint={copy.gobang.trueSkillEmpty}
-            />
-          </div>
         </div>
       </section>
     </div>
