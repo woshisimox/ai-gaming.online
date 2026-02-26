@@ -1701,6 +1701,32 @@ function resolveTableSeatLayout(landlord: number | null): TableSeatLayout {
   };
 }
 
+function extractCurrentTrickPlays(
+  plays: { seat:number; move:'play'|'pass'; cards?:string[]; reason?:string }[],
+): { seat:number; move:'play'|'pass'; cards?:string[]; reason?:string }[] {
+  if (!Array.isArray(plays) || plays.length === 0) return [];
+  let start = 0;
+  let lastPlaySeen = false;
+  let passAfterPlay = 0;
+
+  for (let i = 0; i < plays.length; i += 1) {
+    const action = plays[i];
+    if (action.move === 'play') {
+      if (lastPlaySeen && passAfterPlay >= 2) {
+        start = i;
+      }
+      lastPlaySeen = true;
+      passAfterPlay = 0;
+      continue;
+    }
+    if (action.move === 'pass' && lastPlaySeen) {
+      passAfterPlay += 1;
+    }
+  }
+
+  return plays.slice(start);
+}
+
 function PlayRow({ seat, move, cards, reason, showReason = true }:{ seat:number; move:'play'|'pass'; cards?:string[]; reason?:string; showReason?:boolean }) {
   const { t, lang } = useI18n();
   const details = useContext(SeatInfoContext);
@@ -4153,6 +4179,14 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const [humanSubmitting, setHumanSubmitting] = useState(false);
   const [humanError, setHumanError] = useState<string | null>(null);
   const humanSelectedSet = useMemo(() => new Set(humanSelectedIdx), [humanSelectedIdx]);
+  const currentTrickPlays = useMemo(() => extractCurrentTrickPlays(plays), [plays]);
+  const currentTrickBySeat = useMemo(() => {
+    const map: Partial<Record<number, { seat:number; move:'play'|'pass'; cards?:string[]; reason?:string }>> = {};
+    currentTrickPlays.forEach((entry) => {
+      map[entry.seat] = entry;
+    });
+    return map;
+  }, [currentTrickPlays]);
   const humanHint = humanRequest?.hint ?? null;
   const humanHintDecorated = useMemo(() => {
     if (!humanRequest || humanRequest.phase !== 'play') return [] as string[];
@@ -6921,6 +6955,18 @@ const handleAllSaveInner = () => {
                   faceDown={faceDown}
                   compact={compact}
                 />
+                <div className={styles.tableSeatPlayArea}>
+                  {(() => {
+                    const action = currentTrickBySeat[seat];
+                    if (!action) {
+                      return <span className={styles.tableSeatPlayPlaceholder}>{lang === 'en' ? 'Waiting...' : '等待出牌…'}</span>;
+                    }
+                    if (action.move === 'pass') {
+                      return <span className={styles.tableSeatPlayPass}>{lang === 'en' ? 'Pass' : '过'}</span>;
+                    }
+                    return <Hand cards={action.cards || []} compact />;
+                  })()}
+                </div>
               </div>
             );
           };
@@ -8217,4 +8263,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
