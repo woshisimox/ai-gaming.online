@@ -7103,7 +7103,76 @@ const handleAllSaveInner = () => {
       )}
 
       <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
+        <div className={styles.classicBoard}>
+          <div className={styles.boardLayer}>
+            <div className={styles.boardSeatRow}>
+              {[0, 1].map((seat) => {
+                const roleText = landlord === seat
+                  ? (lang === 'en' ? 'Landlord' : '地主')
+                  : (lang === 'en' ? 'Peasant' : '农民');
+                return (
+                  <div key={`top-seat-${seat}`} style={{ display:'flex', flexDirection:'column', alignItems: seat === 0 ? 'flex-start' : 'flex-end', gap:10 }}>
+                    <div className={styles.boardRoleTag}>
+                      <span style={{ fontSize:28 }}>{landlord === seat ? '👑' : '⚔️'}</span>
+                      <span>{roleText}</span>
+                    </div>
+                    <span className={styles.boardSeatBadge}>ID {seat}</span>
+                    <div style={{ maxWidth:320 }}><Hand cards={hands[seat]} faceDown /></div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className={styles.boardCenter}>
+              {plays.length === 0 ? (
+                <div style={{ color:'rgba(241, 245, 249, 0.95)', fontWeight:700 }}>{lang === 'en' ? 'No plays yet' : '（尚无出牌）'}</div>
+              ) : (
+                (() => {
+                  const latestPerSeat = [0, 1, 2].map((seat) => {
+                    for (let idx = plays.length - 1; idx >= 0; idx -= 1) {
+                      if (plays[idx]?.seat === seat) return plays[idx];
+                    }
+                    return null;
+                  });
+                  return (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(120px, 1fr))', gap:10, width:'100%' }}>
+                      {latestPerSeat.map((entry, seat) => (
+                        <div key={`latest-${seat}`} style={{ border:'1px solid rgba(191, 219, 254, 0.3)', borderRadius:12, padding:'8px 10px', background:'rgba(15, 23, 42, 0.22)', color:'#e2e8f0' }}>
+                          <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{lang === 'en' ? `Seat ${seat}` : `座位 ${seat}`}</div>
+                          {entry ? (
+                            entry.move === 'pass'
+                              ? <div style={{ fontWeight:700 }}>{lang === 'en' ? 'Pass' : '不出'}</div>
+                              : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
+                          ) : <div style={{ opacity:0.65 }}>—</div>}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()
+              )}
+              <div className={styles.boardActions}>
+                <button type="button" className={styles.boardActionButton}>提示</button>
+                <button type="button" className={`${styles.boardActionButton} ${styles.boardActionButtonMuted}`}>不出</button>
+                <button type="button" className={styles.boardActionButton}>出牌</button>
+              </div>
+            </div>
+
+            <div className={styles.boardBottom}>
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                <div className={styles.boardRoleTag}>
+                  <span style={{ fontSize:28 }}>{landlord === 2 ? '👑' : '⚔️'}</span>
+                  <span>{landlord === 2 ? (lang === 'en' ? 'Landlord' : '地主') : (lang === 'en' ? 'Peasant' : '农民')}</span>
+                </div>
+                <span className={styles.boardSeatBadge}>ID 2</span>
+              </div>
+              <div style={{ minHeight:120, display:'flex', alignItems:'flex-end' }}>
+                <Hand cards={hands[2]} interactive={!!(humanRequest && humanRequest.seat === 2 && humanRequest.phase === 'play' && !humanExpired)} selectedIndices={humanRequest && humanRequest.seat === 2 ? humanSelectedSet : undefined} onToggle={humanRequest && humanRequest.seat === 2 && humanRequest.phase === 'play' && !humanExpired ? toggleHumanCard : undefined} disabled={humanSubmitting || humanExpired} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px', marginTop:12 }}>
           {plays.length === 0
             ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
             : plays.map((p, idx) => (
@@ -7115,8 +7184,7 @@ const handleAllSaveInner = () => {
                 reason={p.reason}
                 showReason={canDisplaySeatReason(p.seat)}
               />
-            ))
-          }
+            ))}
         </div>
       </Section>
 
@@ -8200,4 +8268,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
