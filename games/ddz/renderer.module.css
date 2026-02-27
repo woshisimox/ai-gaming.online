@@ -283,9 +283,9 @@
 
 .boardSeatRow {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: 1fr 1fr;
   align-items: start;
-  gap: 12px;
+  gap: 26px;
 }
 
 .boardSeatBadge {
@@ -354,10 +354,9 @@
 
 .boardBottom {
   margin-top: 28px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 14px;
-  align-items: end;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
 }
 
 .checkboxLabel input {
