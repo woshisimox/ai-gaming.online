@@ -115,7 +115,13 @@ declare global {
   var __DOUZERO_BRIDGE_REFCOUNT: number | undefined;
   // eslint-disable-next-line no-var
   var __DOUZERO_BRIDGE_STARTED_BY_APP: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_UNAVAILABLE_UNTIL: number | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_LAST_ERROR: string | undefined;
 }
+
+const DOUZERO_RETRY_COOLDOWN_MS = 30_000;
 
 async function endpointReachable(url: string): Promise<boolean> {
   const target = (url || '').trim();
@@ -172,6 +178,13 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
   const endpoint = (baseUrl || '').trim();
   if (!endpoint) return;
 
+  const unavailableUntil = Number(globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL || 0);
+  if (unavailableUntil > Date.now()) {
+    const remainMs = Math.max(0, unavailableUntil - Date.now());
+    const msg = globalThis.__DOUZERO_BRIDGE_LAST_ERROR || 'DouZero bridge unavailable';
+    throw new Error(`${msg} (cooldown ${Math.ceil(remainMs / 1000)}s)`);
+  }
+
   if (await endpointReachable(endpoint)) return;
 
   const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || DOUZERO_BRIDGE_DEFAULT_CMD).trim();
@@ -211,7 +224,16 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
     });
   }
 
-  await globalThis.__DOUZERO_BRIDGE_STARTING;
+  try {
+    await globalThis.__DOUZERO_BRIDGE_STARTING;
+    globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL = 0;
+    globalThis.__DOUZERO_BRIDGE_LAST_ERROR = '';
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    globalThis.__DOUZERO_BRIDGE_LAST_ERROR = msg;
+    globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL = Date.now() + DOUZERO_RETRY_COOLDOWN_MS;
+    throw err;
+  }
 }
 const __longestSingleChain=(cs:string[])=>{
   const cnt=__count(cs);
