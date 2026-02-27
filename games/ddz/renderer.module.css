@@ -327,31 +327,6 @@
   gap: 12px;
 }
 
-.boardActions {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.boardActionButton {
-  border: none;
-  border-radius: 999px;
-  min-width: 98px;
-  padding: 10px 18px;
-  background: linear-gradient(120deg, #2f47bf, #4a61d8);
-  color: #fff;
-  font-size: 28px;
-  font-weight: 800;
-  box-shadow: 0 8px 18px rgba(22, 36, 88, 0.35);
-}
-
-.boardActionButtonMuted {
-  background: linear-gradient(120deg, rgba(70, 133, 114, 0.8), rgba(60, 117, 101, 0.82));
-  color: rgba(220, 240, 233, 0.8);
-}
-
 .boardBottom {
   margin-top: 28px;
   display: flex;

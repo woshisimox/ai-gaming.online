@@ -7083,11 +7083,6 @@ const handleAllSaveInner = () => {
                         );
                       })()
                     )}
-                    <div className={styles.boardActions}>
-                      <button type="button" className={styles.boardActionButton}>提示</button>
-                      <button type="button" className={`${styles.boardActionButton} ${styles.boardActionButtonMuted}`}>不出</button>
-                      <button type="button" className={styles.boardActionButton}>出牌</button>
-                    </div>
                   </div>
 
                   <div className={styles.boardBottom}>
