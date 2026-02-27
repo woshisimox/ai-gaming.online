@@ -454,9 +454,14 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
     }
     case 'ai:douzero': {
       const model = (spec?.model || '').trim() || 'douzero';
+      const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || '').trim().replace(/\/$/, '');
+      if (!baseUrl) {
+        console.warn('[douzero] endpoint missing, fallback to AdvancedHybrid');
+        return AdvancedHybrid;
+      }
       return DouZeroBot({
         model,
-        baseUrl: (spec?.baseUrl || process.env.DOUZERO_BASE_URL || '').replace(/\/$/, ''),
+        baseUrl,
         token: spec?.token || process.env.DOUZERO_TOKEN || '',
         apiKey: spec?.apiKey || process.env.DOUZERO_API_KEY || '',
       });
