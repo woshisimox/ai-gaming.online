@@ -1793,11 +1793,11 @@ function LadderPanel() {
 
   const players: Record<string, any> = (store?.players)||{};
   const keys = Array.from(new Set([...Object.keys(players), ...catalogIds]));
-  const arr = keys.map((id)=>{
+  const arrRaw = keys.map((id)=>{
     const ent = players[id];
     const val = ent?.current?.deltaR ?? 0;
     const n   = ent?.current?.n ?? 0;
-      const label = normalizeIdentityLabel(ent?.label || catalogLabels(id) || id);
+    const label = normalizeIdentityLabel(ent?.label || catalogLabels(id) || id);
     const rawMatches = ent?.current?.matches;
     const fallbackMatches = ent?.current?.n;
     const matches = (() => {
@@ -1809,6 +1809,25 @@ function LadderPanel() {
     })();
     return { id, label, val, n, matches };
   });
+
+  // 合并同名条目（如历史版本造成的 DouZero 重复 identity）
+  const mergedByLabel = new Map<string, { id:string; label:string; val:number; n:number; matches:number }>();
+  for (const row of arrRaw) {
+    const key = normalizeIdentityLabel(row.label || row.id);
+    const prev = mergedByLabel.get(key);
+    if (!prev) {
+      mergedByLabel.set(key, { ...row, label: key || row.label || row.id });
+      continue;
+    }
+    mergedByLabel.set(key, {
+      id: prev.id,
+      label: prev.label,
+      val: Number(prev.val || 0) + Number(row.val || 0),
+      n: Number(prev.n || 0) + Number(row.n || 0),
+      matches: Number(prev.matches || 0) + Number(row.matches || 0),
+    });
+  }
+  const arr = Array.from(mergedByLabel.values());
 
   const valsForRange = (arr.some(x=> x.n>0) ? arr.filter(x=> x.n>0) : arr);
   const minVal = Math.min(0, ...valsForRange.map(x=> x.val));
