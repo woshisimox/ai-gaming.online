@@ -7113,52 +7113,63 @@ const handleAllSaveInner = () => {
                   </div>
 
                   <div className={`${styles.boardCenter} ${styles.boardCenterStable}`}>
-                    {plays.length === 0 ? (
-                      <div style={{ color:'rgba(241, 245, 249, 0.95)', fontWeight:700 }}>{lang === 'en' ? 'No plays yet' : '（尚无出牌）'}</div>
-                    ) : (
-                      (() => {
-                        const latestBySeat = (seat: number) => {
-                          for (let idx = plays.length - 1; idx >= 0; idx -= 1) {
-                            if (plays[idx]?.seat === seat) return plays[idx];
-                          }
-                          return null;
-                        };
-                        const order: Array<{ seat: number; left: string; top: string; align: 'flex-start' | 'center' | 'flex-end' }> = [
-                          { seat: westSeat, left: '15%', top: '26%', align: 'flex-start' },
-                          { seat: eastSeat, left: '85%', top: '26%', align: 'flex-end' },
-                          { seat: southSeat, left: '50%', top: '66%', align: 'center' },
-                        ];
-                        return (
-                          <div style={{ position:'relative', width:'100%', minHeight:250 }}>
-                            {order.map(({ seat, left, top, align }) => {
-                              const entry = latestBySeat(seat);
-                              return (
-                                <div
-                                  key={`latest-${seat}`}
-                                  style={{
-                                    position:'absolute',
-                                    left,
-                                    top,
-                                    transform:'translate(-50%, -50%)',
-                                    minWidth:120,
-                                    display:'flex',
-                                    flexDirection:'column',
-                                    alignItems:align,
-                                    gap:4,
-                                  }}
-                                >
-                                  {entry ? (
-                                    entry.move === 'pass'
-                                      ? <div style={{ fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{lang === 'en' ? 'Pass' : '不出'}</div>
-                                      : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
-                                  ) : null}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })()
-                    )}
+                    {(() => {
+                      const latestBySeat = (seat: number) => {
+                        for (let idx = plays.length - 1; idx >= 0; idx -= 1) {
+                          if (plays[idx]?.seat === seat) return plays[idx];
+                        }
+                        return null;
+                      };
+                      const order: Array<{ seat: number; left: string; top: string; align: 'flex-start' | 'center' | 'flex-end' }> = [
+                        { seat: westSeat, left: '15%', top: '26%', align: 'flex-start' },
+                        { seat: eastSeat, left: '85%', top: '26%', align: 'flex-end' },
+                        { seat: southSeat, left: '50%', top: '66%', align: 'center' },
+                      ];
+                      const hasAnyPlay = plays.length > 0;
+                      return (
+                        <div style={{ position:'relative', width:'100%', minHeight:250 }}>
+                          {!hasAnyPlay && (
+                            <div
+                              style={{
+                                position:'absolute',
+                                left:'50%',
+                                top:'46%',
+                                transform:'translate(-50%, -50%)',
+                                color:'rgba(241, 245, 249, 0.95)',
+                                fontWeight:700,
+                              }}
+                            >
+                              {lang === 'en' ? 'No plays yet' : '（尚无出牌）'}
+                            </div>
+                          )}
+                          {order.map(({ seat, left, top, align }) => {
+                            const entry = latestBySeat(seat);
+                            return (
+                              <div
+                                key={`latest-${seat}`}
+                                style={{
+                                  position:'absolute',
+                                  left,
+                                  top,
+                                  transform:'translate(-50%, -50%)',
+                                  minWidth:120,
+                                  display:'flex',
+                                  flexDirection:'column',
+                                  alignItems:align,
+                                  gap:4,
+                                }}
+                              >
+                                {entry ? (
+                                  entry.move === 'pass'
+                                    ? <div style={{ fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{lang === 'en' ? 'Pass' : '不出'}</div>
+                                    : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className={styles.boardBottomCards}>
