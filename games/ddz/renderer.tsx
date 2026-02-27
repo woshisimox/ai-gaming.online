@@ -7117,28 +7117,45 @@ const handleAllSaveInner = () => {
                       <div style={{ color:'rgba(241, 245, 249, 0.95)', fontWeight:700 }}>{lang === 'en' ? 'No plays yet' : '（尚无出牌）'}</div>
                     ) : (
                       (() => {
-                        const latestPerSeat = [0, 1, 2].map((seat) => {
+                        const latestBySeat = (seat: number) => {
                           for (let idx = plays.length - 1; idx >= 0; idx -= 1) {
                             if (plays[idx]?.seat === seat) return plays[idx];
                           }
                           return null;
-                        });
+                        };
+                        const order: Array<{ seat: number; gridColumn: string; gridRow: string }> = [
+                          { seat: westSeat, gridColumn: '1 / span 1', gridRow: '1' },
+                          { seat: eastSeat, gridColumn: '3 / span 1', gridRow: '1' },
+                          { seat: southSeat, gridColumn: '2 / span 1', gridRow: '2' },
+                        ];
                         return (
-                          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(120px, 1fr))', gap:10, width:'100%' }}>
-                            {latestPerSeat.map((entry, seat) => (
-                              <div key={`latest-${seat}`} style={{ border:'1px solid rgba(191, 219, 254, 0.3)', borderRadius:12, padding:'8px 10px', background:'rgba(15, 23, 42, 0.22)', color:'#e2e8f0' }}>
-                                <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{seatDisplayNames[seat] || seatName(seat)}</div>
-                                {entry ? (
-                                  entry.move === 'pass'
-                                    ? <div style={{ fontWeight:700 }}>{lang === 'en' ? 'Pass' : '不出'}</div>
-                                    : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
-                                ) : <div style={{ opacity:0.65 }}>—</div>}
-                              </div>
-                            ))}
+                          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(140px, 1fr))', gridTemplateRows:'auto auto', columnGap:10, rowGap:8, width:'100%' }}>
+                            {order.map(({ seat, gridColumn, gridRow }) => {
+                              const entry = latestBySeat(seat);
+                              return (
+                                <div key={`latest-${seat}`} style={{ gridColumn, gridRow, border:'1px solid rgba(191, 219, 254, 0.3)', borderRadius:12, padding:'8px 10px', background:'rgba(15, 23, 42, 0.22)', color:'#e2e8f0' }}>
+                                  <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{seatDisplayNames[seat] || seatName(seat)}</div>
+                                  {entry ? (
+                                    entry.move === 'pass'
+                                      ? <div style={{ fontWeight:700 }}>{lang === 'en' ? 'Pass' : '不出'}</div>
+                                      : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
+                                  ) : <div style={{ opacity:0.65 }}>—</div>}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })()
                     )}
+                  </div>
+
+                  <div className={styles.boardBottomCards}>
+                    <div style={{ fontSize:12, color:'rgba(226, 232, 240, 0.95)', marginBottom:4, fontWeight:700 }}>{lang === 'en' ? 'Landlord Bottom' : '地主底牌'}</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {bottomInfo.cards.length > 0 ? bottomInfo.cards.map((c, idx) => (
+                        <Card key={`lord-bottom-${c.label}-${idx}`} label={c.label} compact dimmed={!!c.used} />
+                      )) : <span style={{ opacity:0.7, color:'#e2e8f0' }}>—</span>}
+                    </div>
                   </div>
 
                   <div className={styles.boardBottom}>
