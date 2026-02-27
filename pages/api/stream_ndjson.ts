@@ -1,5 +1,6 @@
 // pages/api/stream_ndjson.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { spawn } from 'child_process';
 import {
   runOneGame,
   GreedyMax,
@@ -94,6 +95,75 @@ const __keyRank = (mv:string[])=>{
 
 const HUMAN_TIMEOUT_GRACE_MS = 600;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+
+const DOUZERO_BRIDGE_DEFAULT_BASE = 'http://127.0.0.1:5000/douzero';
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_PROC: ReturnType<typeof spawn> | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_STARTING: Promise<void> | null | undefined;
+}
+
+async function endpointReachable(url: string): Promise<boolean> {
+  const target = (url || '').trim();
+  if (!target) return false;
+  try {
+    const u = new URL(target);
+    const originProbe = `${u.protocol}//${u.host}`;
+    const res = await fetch(originProbe, { method: 'GET' });
+    return !!res;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
+  const endpoint = (baseUrl || '').trim();
+  if (!endpoint) return;
+
+  if (await endpointReachable(endpoint)) return;
+
+  const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || '').trim();
+  if (!autoStartCmd) return;
+
+  if (!globalThis.__DOUZERO_BRIDGE_STARTING) {
+    globalThis.__DOUZERO_BRIDGE_STARTING = (async () => {
+      if (!globalThis.__DOUZERO_BRIDGE_PROC || globalThis.__DOUZERO_BRIDGE_PROC.exitCode !== null) {
+        const shell = process.env.SHELL || '/bin/bash';
+        const child = spawn(shell, ['-lc', autoStartCmd], {
+          env: process.env,
+          stdio: 'pipe',
+          detached: false,
+        });
+        globalThis.__DOUZERO_BRIDGE_PROC = child;
+        child.stdout?.on('data', (buf) => {
+          try { console.log('[douzero:auto-start][stdout]', String(buf).trim()); } catch {}
+        });
+        child.stderr?.on('data', (buf) => {
+          try { console.warn('[douzero:auto-start][stderr]', String(buf).trim()); } catch {}
+        });
+        child.on('exit', (code) => {
+          try { console.warn('[douzero:auto-start] process exited', code); } catch {}
+        });
+      }
+
+      const timeoutMsRaw = Number(process.env.DOUZERO_AUTO_START_TIMEOUT_MS || '15000');
+      const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(1000, Math.floor(timeoutMsRaw)) : 15000;
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (await endpointReachable(endpoint)) return;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint}`);
+    })().finally(() => {
+      globalThis.__DOUZERO_BRIDGE_STARTING = null;
+    });
+  }
+
+  await globalThis.__DOUZERO_BRIDGE_STARTING;
+}
 const __longestSingleChain=(cs:string[])=>{
   const cnt=__count(cs);
   const rs=Array.from(cnt.keys()).filter(r=>r!=='2'&&r!=='x'&&r!=='X').sort((a,b)=>(__POS[a]??-1)-(__POS[b]??-1));
@@ -454,13 +524,20 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
     }
     case 'ai:douzero': {
       const model = (spec?.model || '').trim() || 'douzero';
-      const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || '').trim().replace(/\/$/, '');
-      return DouZeroBot({
+      const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '');
+      const normalizedBase = baseUrl || ((process.env.DOUZERO_AUTO_START_CMD || '').trim() ? DOUZERO_BRIDGE_DEFAULT_BASE : '');
+      const bot = DouZeroBot({
         model,
-        baseUrl,
+        baseUrl: normalizedBase,
         token: spec?.token || process.env.DOUZERO_TOKEN || '',
         apiKey: spec?.apiKey || process.env.DOUZERO_API_KEY || '',
       });
+      const wrapped = async (ctx: any) => {
+        await ensureDouZeroBridge(normalizedBase);
+        return bot(ctx);
+      };
+      (wrapped as any).phaseAware = true;
+      return wrapped as any;
     }
     case 'http':       return HttpBot({ base: (spec?.baseUrl||'').replace(/\/$/,''), token: spec?.token || '' });
     default:           return GreedyMax;
