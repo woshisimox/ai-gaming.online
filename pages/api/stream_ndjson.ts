@@ -105,6 +105,10 @@ const DOUZERO_BRIDGE_DEFAULT_SCRIPT = pathJoin(process.cwd(), 'scripts', 'douzer
 const DOUZERO_BRIDGE_DEFAULT_CMD = existsSync(DOUZERO_BRIDGE_DEFAULT_SCRIPT)
   ? `bash ${DOUZERO_BRIDGE_DEFAULT_SCRIPT}`
   : 'bash ./scripts/douzero_bridge_autostart.sh';
+const DOUZERO_LOCAL_DEFAULT_SCRIPT = pathJoin(process.cwd(), 'scripts', 'douzero_local_autostart.sh');
+const DOUZERO_LOCAL_DEFAULT_CMD = existsSync(DOUZERO_LOCAL_DEFAULT_SCRIPT)
+  ? `bash ${DOUZERO_LOCAL_DEFAULT_SCRIPT}`
+  : 'bash ./scripts/douzero_local_autostart.sh';
 const DOUZERO_HEALTHCHECK_TIMEOUT_MS = 1500;
 
 declare global {
@@ -668,7 +672,7 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
     case 'ai:douzero': {
       const model = (spec?.model || '').trim() || 'douzero';
       const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '');
-      const localCmd = (!baseUrl && (process.env.DOUZERO_LOCAL_CMD || '').trim()) || '';
+      const localCmd = (!baseUrl && ((process.env.DOUZERO_LOCAL_CMD || '').trim() || DOUZERO_LOCAL_DEFAULT_CMD)) || '';
 
       if (localCmd) {
         const localTimeoutRaw = Number(process.env.DOUZERO_LOCAL_TIMEOUT_MS || '15000');
@@ -1287,9 +1291,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const turnTimeoutMsArr = parseTurnTimeoutMsArr(req);
     const seatSpecs = (body.seats || []).slice(0,3) as SeatSpec[];
     hasDouZeroSeat = seatSpecs.some((s) => s?.choice === 'ai:douzero');
-    const localCmdEnabled = !!(process.env.DOUZERO_LOCAL_CMD || '').trim();
+    const localCmdEnabled = !!((process.env.DOUZERO_LOCAL_CMD || '').trim() || DOUZERO_LOCAL_DEFAULT_CMD);
     if (hasDouZeroSeat && localCmdEnabled) {
-      writeLine(res, { type:'log', message:'DouZero local mode enabled via DOUZERO_LOCAL_CMD (no bridge warmup required)' });
+      writeLine(res, {
+        type:'log',
+        message:`DouZero local mode enabled via ${(process.env.DOUZERO_LOCAL_CMD || '').trim() ? 'DOUZERO_LOCAL_CMD' : 'built-in default local cmd'} (no bridge warmup required)`,
+      });
     }
     if (hasDouZeroSeat && !localCmdEnabled) {
       acquireDouZeroBridgeLease();
