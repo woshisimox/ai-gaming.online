@@ -1,5 +1,8 @@
 // pages/api/stream_ndjson.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
+import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { join as pathJoin } from 'path';
 import {
   runOneGame,
   GreedyMax,
@@ -14,6 +17,8 @@ import {
 } from '../../lib/doudizhu/engine';
 import { OpenAIBot } from '../../lib/bots/openai_bot';
 import { GeminiBot } from '../../lib/bots/gemini_bot';
+import { DouZeroBot } from '../../lib/bots/douzero_bot';
+import { DouZeroLocalBot } from '../../lib/bots/douzero_local_bot';
 import { GrokBot } from '../../lib/bots/grok_bot';
 import { HttpBot } from '../../lib/bots/http_bot';
 import { KimiBot } from '../../lib/bots/kimi_bot';
@@ -93,6 +98,219 @@ const __keyRank = (mv:string[])=>{
 
 const HUMAN_TIMEOUT_GRACE_MS = 600;
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+
+
+const DOUZERO_BRIDGE_DEFAULT_BASE = 'http://127.0.0.1:5000/douzero';
+const DOUZERO_BRIDGE_DEFAULT_SCRIPT = pathJoin(process.cwd(), 'scripts', 'douzero_bridge_autostart.sh');
+const DOUZERO_BRIDGE_DEFAULT_CMD = existsSync(DOUZERO_BRIDGE_DEFAULT_SCRIPT)
+  ? `bash ${DOUZERO_BRIDGE_DEFAULT_SCRIPT}`
+  : 'bash ./scripts/douzero_bridge_autostart.sh';
+const DOUZERO_LOCAL_DEFAULT_SCRIPT = pathJoin(process.cwd(), 'scripts', 'douzero_local_autostart.sh');
+const DOUZERO_LOCAL_DEFAULT_CMD = existsSync(DOUZERO_LOCAL_DEFAULT_SCRIPT)
+  ? `bash ${DOUZERO_LOCAL_DEFAULT_SCRIPT}`
+  : 'bash ./scripts/douzero_local_autostart.sh';
+const DOUZERO_HEALTHCHECK_TIMEOUT_MS = 1500;
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_PROC: ReturnType<typeof spawn> | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_STARTING: Promise<void> | null | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_REFCOUNT: number | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_STARTED_BY_APP: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_UNAVAILABLE_UNTIL: number | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_LAST_ERROR: string | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_LAST_STDERR: string | undefined;
+}
+
+const DOUZERO_RETRY_COOLDOWN_MS = 30_000;
+const DOUZERO_STARTUP_DEBUG_INTERVAL_MS = 5_000;
+
+async function endpointReachable(url: string): Promise<boolean> {
+  const target = (url || '').trim();
+  if (!target) return false;
+  const probe = async (probeUrl: string, method: 'GET' | 'HEAD' = 'GET') => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), DOUZERO_HEALTHCHECK_TIMEOUT_MS);
+    try {
+      const res = await fetch(probeUrl, { method, signal: ac.signal });
+      return !!res;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const u = new URL(target);
+    const originProbe = `${u.protocol}//${u.host}`;
+    if (await probe(target, 'HEAD')) return true;
+    if (await probe(target, 'GET')) return true;
+    if (await probe(originProbe, 'HEAD')) return true;
+    if (await probe(originProbe, 'GET')) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+
+
+
+async function inspectDouZeroEndpoint(endpoint: string): Promise<{
+  endpointHead: boolean;
+  endpointGet: boolean;
+  originHead: boolean;
+  originGet: boolean;
+}> {
+  const probe = async (probeUrl: string, method: 'GET' | 'HEAD') => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), DOUZERO_HEALTHCHECK_TIMEOUT_MS);
+    try {
+      const res = await fetch(probeUrl, { method, signal: ac.signal });
+      return !!res;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const u = new URL(endpoint);
+    const origin = `${u.protocol}//${u.host}`;
+    const [endpointHead, endpointGet, originHead, originGet] = await Promise.all([
+      probe(endpoint, 'HEAD'),
+      probe(endpoint, 'GET'),
+      probe(origin, 'HEAD'),
+      probe(origin, 'GET'),
+    ]);
+    return { endpointHead, endpointGet, originHead, originGet };
+  } catch {
+    return { endpointHead: false, endpointGet: false, originHead: false, originGet: false };
+  }
+}
+
+function acquireDouZeroBridgeLease(): void {
+  const n = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  globalThis.__DOUZERO_BRIDGE_REFCOUNT = n + 1;
+}
+
+function releaseDouZeroBridgeLease(): void {
+  const n = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  globalThis.__DOUZERO_BRIDGE_REFCOUNT = Math.max(0, n - 1);
+}
+
+async function shutdownDouZeroBridgeIfIdle(): Promise<void> {
+  const ref = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  if (ref > 0) return;
+  const startedByApp = !!globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP;
+  const child = globalThis.__DOUZERO_BRIDGE_PROC;
+  if (!startedByApp || !child || child.exitCode !== null) return;
+  try { child.kill('SIGTERM'); } catch {}
+  globalThis.__DOUZERO_BRIDGE_PROC = undefined;
+  globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP = false;
+}
+
+async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
+  const endpoint = (baseUrl || '').trim();
+  if (!endpoint) return;
+
+  const unavailableUntil = Number(globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL || 0);
+  if (unavailableUntil > Date.now()) {
+    const remainMs = Math.max(0, unavailableUntil - Date.now());
+    const msg = globalThis.__DOUZERO_BRIDGE_LAST_ERROR || 'DouZero bridge unavailable';
+    throw new Error(`${msg} (cooldown ${Math.ceil(remainMs / 1000)}s)`);
+  }
+
+  if (await endpointReachable(endpoint)) return;
+
+  const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || DOUZERO_BRIDGE_DEFAULT_CMD).trim();
+
+  if (!globalThis.__DOUZERO_BRIDGE_STARTING) {
+    globalThis.__DOUZERO_BRIDGE_STARTING = (async () => {
+      if (!globalThis.__DOUZERO_BRIDGE_PROC || globalThis.__DOUZERO_BRIDGE_PROC.exitCode !== null) {
+        const shell = process.env.SHELL || '/bin/bash';
+        try {
+          console.log('[douzero:auto-start] spawning bridge', JSON.stringify({ endpoint, shell, cmd: autoStartCmd, cwd: process.cwd() }));
+        } catch {}
+        const child = spawn(shell, ['-lc', autoStartCmd], {
+          env: process.env,
+          stdio: 'pipe',
+          detached: false,
+        });
+        globalThis.__DOUZERO_BRIDGE_PROC = child;
+        globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP = true;
+        globalThis.__DOUZERO_BRIDGE_LAST_STDERR = '';
+        child.on('error', (err) => {
+          try { console.warn('[douzero:auto-start] process error', err?.message || String(err)); } catch {}
+        });
+        child.stdout?.on('data', (buf) => {
+          try { console.log('[douzero:auto-start][stdout]', String(buf).trim()); } catch {}
+        });
+        child.stderr?.on('data', (buf) => {
+          const text = String(buf).trim();
+          globalThis.__DOUZERO_BRIDGE_LAST_STDERR = text.slice(-400);
+          try { console.warn('[douzero:auto-start][stderr]', text); } catch {}
+        });
+        child.on('exit', (code, signal) => {
+          try { console.warn('[douzero:auto-start] process exited', JSON.stringify({ code, signal })); } catch {}
+        });
+      }
+
+      const timeoutMsRaw = Number(process.env.DOUZERO_AUTO_START_TIMEOUT_MS || '60000');
+      const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(1000, Math.floor(timeoutMsRaw)) : 60000;
+      const deadline = Date.now() + timeoutMs;
+      let nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
+      while (Date.now() < deadline) {
+        if (await endpointReachable(endpoint)) return;
+        const c = globalThis.__DOUZERO_BRIDGE_PROC;
+        if (c && c.exitCode !== null) {
+          const stderrHint = (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').trim();
+          throw new Error(`DouZero auto-start failed early: process exited code=${c.exitCode}; endpoint=${endpoint} (cmd=${autoStartCmd})${stderrHint ? `; lastStderr=${stderrHint}` : ''}`);
+        }
+        if (Date.now() >= nextDebugAt) {
+          nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
+          try {
+            console.warn('[douzero:auto-start] waiting endpoint', JSON.stringify({
+              endpoint,
+              pid: c?.pid || null,
+              exitCode: c?.exitCode ?? null,
+              lastStderr: (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').slice(-200),
+            }));
+          } catch {}
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      const endpointStatus = await inspectDouZeroEndpoint(endpoint);
+      const child = globalThis.__DOUZERO_BRIDGE_PROC;
+      const diagnosis = child && child.exitCode !== null
+        ? 'bridge process exited early: likely missing Python module or startup command failure'
+        : (endpointStatus.originHead || endpointStatus.originGet)
+          ? 'origin reachable but endpoint path unavailable: likely wrong DOUZERO_BRIDGE_PATH/route'
+          : 'origin unreachable: bridge did not listen on expected host/port';
+      const stderrHint = (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').trim();
+      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint} (cmd=${autoStartCmd}); diagnose=${diagnosis}; endpointProbe=${JSON.stringify(endpointStatus)}${stderrHint ? `; lastStderr=${stderrHint}` : ''}`);
+    })().finally(() => {
+      globalThis.__DOUZERO_BRIDGE_STARTING = null;
+    });
+  }
+
+  try {
+    await globalThis.__DOUZERO_BRIDGE_STARTING;
+    globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL = 0;
+    globalThis.__DOUZERO_BRIDGE_LAST_ERROR = '';
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    globalThis.__DOUZERO_BRIDGE_LAST_ERROR = msg;
+    globalThis.__DOUZERO_BRIDGE_UNAVAILABLE_UNTIL = Date.now() + DOUZERO_RETRY_COOLDOWN_MS;
+    throw err;
+  }
+}
 const __longestSingleChain=(cs:string[])=>{
   const cnt=__count(cs);
   const rs=Array.from(cnt.keys()).filter(r=>r!=='2'&&r!=='x'&&r!=='X').sort((a,b)=>(__POS[a]??-1)-(__POS[b]??-1));
@@ -360,7 +578,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek' | 'ai:douzero'
   | 'http'
   | 'human';
 
@@ -402,6 +620,7 @@ function providerLabel(choice: BotChoice) {
     case 'ai:kimi': return 'Kimi';
     case 'ai:qwen': return 'Qwen';
     case 'ai:deepseek': return 'DeepSeek';
+    case 'ai:douzero': return 'DouZero';
     case 'http': return 'HTTP';
   }
 }
@@ -449,6 +668,35 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
       const model = (spec?.model || '').trim();
       if (!model) throw new Error('DeepSeek 模型未配置');
       return DeepseekBot({ apiKey: spec?.apiKey || '', model, baseUrl: spec?.baseUrl });
+    }
+    case 'ai:douzero': {
+      const model = (spec?.model || '').trim() || 'douzero';
+      const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '');
+      const localCmd = (!baseUrl && ((process.env.DOUZERO_LOCAL_CMD || '').trim() || DOUZERO_LOCAL_DEFAULT_CMD)) || '';
+
+      if (localCmd) {
+        const localTimeoutRaw = Number(process.env.DOUZERO_LOCAL_TIMEOUT_MS || '15000');
+        const localTimeoutMs = Number.isFinite(localTimeoutRaw) ? Math.max(500, Math.floor(localTimeoutRaw)) : 15000;
+        const localBot = DouZeroLocalBot({ cmd: localCmd, model, timeoutMs: localTimeoutMs });
+        (localBot as any).phaseAware = true;
+        return localBot as any;
+      }
+
+      const normalizedBase = baseUrl || DOUZERO_BRIDGE_DEFAULT_BASE;
+      const bot = DouZeroBot({
+        model,
+        baseUrl: normalizedBase,
+        token: spec?.token || process.env.DOUZERO_TOKEN || '',
+        apiKey: spec?.apiKey || process.env.DOUZERO_API_KEY || '',
+      });
+      let bridgeReady: Promise<void> | null = null;
+      const wrapped = async (ctx: any) => {
+        if (!bridgeReady) bridgeReady = ensureDouZeroBridge(normalizedBase);
+        await bridgeReady;
+        return bot(ctx);
+      };
+      (wrapped as any).phaseAware = true;
+      return wrapped as any;
     }
     case 'http':       return HttpBot({ base: (spec?.baseUrl||'').replace(/\/$/,''), token: spec?.token || '' });
     default:           return GreedyMax;
@@ -1024,6 +1272,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const keepAlive = setInterval(() => { try { (res as any).write('\n'); } catch {} }, 15000);
 
   let sessionKey = '';
+  let hasDouZeroSeat = false;
 
   try {
     const body: RunBody = (req as any).body as any;
@@ -1041,6 +1290,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const turnTimeoutMsArr = parseTurnTimeoutMsArr(req);
     const seatSpecs = (body.seats || []).slice(0,3) as SeatSpec[];
+    hasDouZeroSeat = seatSpecs.some((s) => s?.choice === 'ai:douzero');
+    const localCmdEnabled = !!((process.env.DOUZERO_LOCAL_CMD || '').trim() || DOUZERO_LOCAL_DEFAULT_CMD);
+    if (hasDouZeroSeat && localCmdEnabled) {
+      writeLine(res, {
+        type:'log',
+        message:`DouZero local mode enabled via ${(process.env.DOUZERO_LOCAL_CMD || '').trim() ? 'DOUZERO_LOCAL_CMD' : 'built-in default local cmd'} (no bridge warmup required)`,
+      });
+    }
+    if (hasDouZeroSeat && !localCmdEnabled) {
+      acquireDouZeroBridgeLease();
+      const dzSeat = seatSpecs.find((s) => s?.choice === 'ai:douzero');
+      const dzBase = (dzSeat?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '') || DOUZERO_BRIDGE_DEFAULT_BASE;
+      writeLine(res, { type:'log', message:`DouZero bridge warmup: ${dzBase}` });
+      try {
+        await ensureDouZeroBridge(dzBase);
+        writeLine(res, { type:'log', message:'DouZero bridge ready' });
+      } catch (bridgeErr: any) {
+        writeLine(res, { type:'log', message:`DouZero bridge warmup failed: ${bridgeErr?.message || String(bridgeErr)}` });
+      }
+    }
     const baseBots = seatSpecs.map((s) => asBot(s.choice, s));
     const delays = ((body.seatDelayMs || []) as number[]);
 
@@ -1079,6 +1348,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try{ (res as any).end(); }catch{}
     if (sessionKey) {
       try { resetHumanSession(sessionKey); } catch {}
+    }
+    if (hasDouZeroSeat) {
+      releaseDouZeroBridgeLease();
+      try { await shutdownDouZeroBridgeIfIdle(); } catch {}
     }
   }
 }

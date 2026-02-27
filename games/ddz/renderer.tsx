@@ -368,7 +368,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek' | 'ai:douzero'
   | 'http'
   | 'human';
 
@@ -444,6 +444,7 @@ const KO_ALL_CHOICES: BotChoice[] = [
   'ai:kimi',
   'ai:qwen',
   'ai:deepseek',
+  'ai:douzero',
   'http',
   'human',
 ];
@@ -524,7 +525,7 @@ function makeDefaultKnockoutEntries(): KnockoutEntry[] {
 }
 
 function readProviderBase(choice: BotChoice, keys?: BotCredentials | null): string {
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     return (keys?.httpBase || '').trim();
   }
   if (choice === 'ai:deepseek') {
@@ -545,7 +546,7 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   if (typeof base.deepseekBase === 'string') out.deepseekBase = base.deepseekBase;
   if (typeof base.httpBase === 'string') out.httpBase = base.httpBase;
   if (typeof base.httpToken === 'string') out.httpToken = base.httpToken;
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     if (out.httpBase === undefined) out.httpBase = '';
     if (out.httpToken === undefined) out.httpToken = '';
   }
@@ -556,7 +557,7 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
 }
 
 function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     const base = typeof raw?.httpBase === 'string' ? raw.httpBase : '';
     return base ? { httpBase: base } : {};
   }
@@ -570,7 +571,7 @@ function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
 function persistableKnockoutEntry(entry: KnockoutEntry) {
   const { keys, ...rest } = entry;
   const safe: BotCredentials = {};
-  if (entry.choice === 'http') {
+  if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
     const base = typeof keys?.httpBase === 'string' ? keys.httpBase.trim() : '';
     if (base) safe.httpBase = base;
   } else if (entry.choice === 'ai:deepseek') {
@@ -1715,7 +1716,7 @@ const writeThoughtStore = (store: ThoughtStore): ThoughtStore => writeLatencySto
 
 const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
   'built-in:greedy-max','built-in:greedy-min','built-in:random-legal','built-in:mininet','built-in:ally-support','built-in:endgame-rush','built-in:advanced-hybrid',
-  'ai:openai','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','http','human',
+  'ai:openai','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','ai:douzero','http','human',
 ];
 const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeThoughtIdentity(choice));
 
@@ -1733,6 +1734,9 @@ function parseThoughtIdentity(id: string): { choice: BotChoice | string; model: 
 function thoughtLabelForIdentity(id: string): string {
   const { choice, model, base } = parseThoughtIdentity(id);
   const label = choiceLabel(choice as BotChoice);
+  if (choice === 'ai:douzero') {
+    return label;
+  }
   if (typeof choice === 'string' && choice.startsWith('ai:')) {
     const displayModel = (model || '').trim();
     return displayModel ? `${label}:${displayModel}` : label;
@@ -1789,11 +1793,11 @@ function LadderPanel() {
 
   const players: Record<string, any> = (store?.players)||{};
   const keys = Array.from(new Set([...Object.keys(players), ...catalogIds]));
-  const arr = keys.map((id)=>{
+  const arrRaw = keys.map((id)=>{
     const ent = players[id];
     const val = ent?.current?.deltaR ?? 0;
     const n   = ent?.current?.n ?? 0;
-      const label = normalizeIdentityLabel(ent?.label || catalogLabels(id) || id);
+    const label = normalizeIdentityLabel(ent?.label || catalogLabels(id) || id);
     const rawMatches = ent?.current?.matches;
     const fallbackMatches = ent?.current?.n;
     const matches = (() => {
@@ -1805,6 +1809,25 @@ function LadderPanel() {
     })();
     return { id, label, val, n, matches };
   });
+
+  // 合并同名条目（如历史版本造成的 DouZero 重复 identity）
+  const mergedByLabel = new Map<string, { id:string; label:string; val:number; n:number; matches:number }>();
+  for (const row of arrRaw) {
+    const key = normalizeIdentityLabel(row.label || row.id);
+    const prev = mergedByLabel.get(key);
+    if (!prev) {
+      mergedByLabel.set(key, { ...row, label: key || row.label || row.id });
+      continue;
+    }
+    mergedByLabel.set(key, {
+      id: prev.id,
+      label: prev.label,
+      val: Number(prev.val || 0) + Number(row.val || 0),
+      n: Number(prev.n || 0) + Number(row.n || 0),
+      matches: Number(prev.matches || 0) + Number(row.matches || 0),
+    });
+  }
+  const arr = Array.from(mergedByLabel.values());
 
   const valsForRange = (arr.some(x=> x.n>0) ? arr.filter(x=> x.n>0) : arr);
   const minVal = Math.min(0, ...valsForRange.map(x=> x.val));
@@ -2092,7 +2115,7 @@ function KnockoutPanel() {
     if (entry.choice.startsWith('ai:')) {
       payload.model = entry.model.trim();
     }
-    if (entry.choice === 'http') {
+    if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
       payload.httpBase = readProviderBase(entry.choice, entry.keys);
     }
     if (entry.choice === 'ai:deepseek') {
@@ -2113,7 +2136,7 @@ function KnockoutPanel() {
       const model = entry.model.trim();
       if (model) payload.model = model;
     }
-    if (entry.choice === 'http') {
+    if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
       const base = readProviderBase(entry.choice, entry.keys);
       if (base) payload.httpBase = base;
     }
@@ -2276,6 +2299,9 @@ function KnockoutPanel() {
                 if (normalizedChoice === 'ai:deepseek') {
                   return typeof (parsed as any).deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
                 }
+                if (normalizedChoice === 'ai:douzero') {
+                  return typeof (parsed as any).httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+                }
                 return '';
               })();
               const customBase = entryBase || tokenBase;
@@ -2324,6 +2350,9 @@ function KnockoutPanel() {
           if (normalizedChoice === 'ai:deepseek') {
             return typeof (parsed as any)?.deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
           }
+          if (normalizedChoice === 'ai:douzero') {
+            return typeof (parsed as any)?.httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+          }
           return '';
         })();
         const providerLabel = normalizedChoice
@@ -2367,6 +2396,9 @@ function KnockoutPanel() {
           }
           if (rawChoice === 'ai:deepseek') {
             return typeof parsed?.deepseekBase === 'string' ? parsed.deepseekBase : '';
+          }
+          if (rawChoice === 'ai:douzero') {
+            return typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
           }
           return '';
         })();
@@ -3203,6 +3235,7 @@ function KnockoutPanel() {
                       <option value="ai:kimi">Kimi</option>
                       <option value="ai:qwen">Qwen</option>
                       <option value="ai:deepseek">DeepSeek</option>
+                      <option value="ai:douzero">DouZero</option>
                       <option value="http">HTTP</option>
                     </optgroup>
                     <optgroup label={lang === 'en' ? 'Human' : '人类选手'}>
@@ -3311,6 +3344,33 @@ function KnockoutPanel() {
                       如果官方接口返回 402，可尝试将基础地址改为 v1beta。
                     </div>
                   </label>
+                )}
+
+                {entry.choice === 'ai:douzero' && (
+                  <>
+                    <label style={{ display:'block' }}>
+                      DouZero Endpoint / URL
+                      <input
+                        type="text"
+                        value={entry.keys?.httpBase || ''}
+                        onChange={e => handleEntryKeyChange(entry.id, 'httpBase', e.target.value)}
+                        style={{ width:'100%', marginTop:4 }}
+                        placeholder="http://127.0.0.1:5000/douzero"
+                      />
+                    </label>
+                    <label style={{ display:'block' }}>
+                      DouZero Token（可选）
+                      <input
+                        type="password"
+                        value={entry.keys?.httpToken || ''}
+                        onChange={e => handleEntryKeyChange(entry.id, 'httpToken', e.target.value)}
+                        style={{ width:'100%', marginTop:4 }}
+                      />
+                    </label>
+                    <div style={{ fontSize:12, color:'#6b7280', marginTop:4 }}>
+                      未填写时默认走本地命令模式（内置 DOUZERO_LOCAL_CMD），也可配置 DOUZERO_LOCAL_CMD / DOUZERO_LOCAL_INNER_CMD 覆盖；若需 HTTP bridge 再填写 DouZero Endpoint / URL。
+                    </div>
+                  </>
                 )}
 
                 {entry.choice === 'http' && (
@@ -3761,6 +3821,7 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
     case 'ai:qwen':   return /^qwen[-\w.]*/.test(low) ? m : '';
     case 'ai:deepseek': return /^deepseek[-\w.]*/.test(low) ? m : '';
+    case 'ai:douzero': return m;
     default: return '';
   }
 }
@@ -3772,6 +3833,7 @@ const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
   'ai:kimi': 'kimi-k2-0905-preview',
   'ai:qwen': 'qwen-plus',
   'ai:deepseek': 'deepseek-chat',
+  'ai:douzero': 'douzero',
 };
 
 function defaultModelForChoice(choice: BotChoice): string {
@@ -3798,6 +3860,7 @@ function choiceLabel(choice: BotChoice): string {
     case 'ai:kimi':               return 'Kimi';
     case 'ai:qwen':               return 'Qwen';
     case 'ai:deepseek':           return 'DeepSeek';
+    case 'ai:douzero':            return 'DouZero';
     case 'http':                  return 'HTTP';
     case 'human':                 return 'Human';
     default: return String(choice);
@@ -3812,7 +3875,7 @@ function providerSummary(choice: BotChoice, model: string | undefined, customBas
     const customLabel = lang === 'en' ? 'custom' : '自定义';
     return `${provider} · ${customLabel}`;
   }
-  if (choice === 'ai:deepseek' && base) {
+  if ((choice === 'ai:deepseek' || choice === 'ai:douzero') && base) {
     const customLabel = lang === 'en' ? 'custom base' : '自定义接口';
     return `${provider} · ${customLabel}`;
   }
@@ -5059,6 +5122,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const landlordRef = useRef(landlord); useEffect(() => { landlordRef.current = landlord; }, [landlord]);
   const winnerRef = useRef(winner); useEffect(() => { winnerRef.current = winner; }, [winner]);
+  const handSettledRef = useRef(false);
   const deltaRef = useRef(delta); useEffect(() => { deltaRef.current = delta; }, [delta]);
   const multiplierRef = useRef(multiplier); useEffect(() => { multiplierRef.current = multiplier; }, [multiplier]);
   const bidMultiplierRef = useRef(bidMultiplier); useEffect(() => { bidMultiplierRef.current = bidMultiplier; }, [bidMultiplier]);
@@ -5227,6 +5291,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
           case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '', baseUrl: readProviderBase(choice, keys) };
           case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
           case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '', baseUrl: readProviderBase(choice, keys) };
+          case 'ai:douzero':  return { choice, model, baseUrl: readProviderBase(choice, keys), token: keys.httpToken || '' };
           case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
@@ -5239,6 +5304,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         if (s.choice.startsWith('built-in')) return `${nm}=${choiceLabel(s.choice as BotChoice)}`;
         if (s.choice === 'http') return `${nm}=HTTP(${s.baseUrl ? 'custom' : 'default'})`;
         if (s.choice === 'ai:deepseek') return `${nm}=DeepSeek(${s.baseUrl ? 'custom' : 'default'})`;
+        if (s.choice === 'ai:douzero') return `${nm}=DouZero(${s.baseUrl ? 'custom' : 'default'})`;
         const model = typeof s.model === 'string' ? s.model.trim() : '';
         const suffix = model ? `(${model})` : '';
         return `${nm}=${choiceLabel(s.choice as BotChoice)}${suffix}`;
@@ -5465,6 +5531,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                 resetHandReveal();
                 suitUsageRef.current = new Map();
                 roundBaseTotalsRef.current = [nextTotals[0], nextTotals[1], nextTotals[2]] as [number, number, number];
+                handSettledRef.current = false;
 
                 nextLog = [...nextLog, `【边界】round-start #${m.round}`];
                 continue;
@@ -5485,6 +5552,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                   nextDeckAudit = null;
                   deckAuditChanged = true;
                 }
+                handSettledRef.current = false;
                 continue;
               }
               if (m.type === 'event' && m.kind === 'round-end') {
@@ -5525,6 +5593,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                     ? rawLord
                     : null;
                   nextLandlord = lord;
+                  handSettledRef.current = false;
                   const bottomRaw = Array.isArray(m.bottom)
                     ? (m.bottom as string[])
                     : Array.isArray(m.payload?.bottom)
@@ -6090,7 +6159,10 @@ if (m.type === 'event' && (m.kind === 'extra-double' || m.kind === 'post-double'
               }
 
               // -------- 出/过 --------
-              
+              if (handSettledRef.current && (m.type === 'turn' || (m.type === 'event' && m.kind === 'play'))) {
+                continue;
+              }
+
                 // （fallback）若本批次没有收到 'turn' 行，则从 event:play 中恢复 score
                 if (!sawAnyTurn) {
                   const s = (typeof m.seat === 'number') ? m.seat as number : -1;
@@ -6197,6 +6269,7 @@ if (m.type === 'event' && m.kind === 'play') {
                 (m.type === 'event' && (m.kind === 'win' || m.kind === 'result' || m.kind === 'game-over' || m.kind === 'game_end')) ||
                 (m.type === 'result') || (m.type === 'game-over') || (m.type === 'game_end');
               if (isWinLike) {
+                handSettledRef.current = true;
                 const L = (nextLandlord ?? 0) as number;
                 const prevTotals = (() => {
                   const stored = roundBaseTotalsRef.current;
@@ -6847,97 +6920,6 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
-            const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                <Hand
-                  cards={hands[i]}
-                  interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
-                  onToggle={seatInteractive ? toggleHumanCard : undefined}
-                  disabled={humanSubmitting || humanExpired}
-                  faceDown={faceDown}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                    </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
 
       {humanRequest && (
         <Section title={lang === 'en' ? 'Human control' : '人类操作'}>
@@ -7103,21 +7085,141 @@ const handleAllSaveInner = () => {
       )}
 
       <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))
-          }
+        <div className={styles.classicBoard}>
+          <div className={styles.boardLayer}>
+            {(() => {
+              const southSeat = (typeof landlord === 'number' && landlord >= 0 && landlord < 3) ? landlord : 2;
+              // 固定顺时针座位顺序：west -> south -> east
+              // 因此在 southSeat 已知时：west = south+1, east = south+2 (mod 3)
+              const westSeat = (southSeat + 1) % 3;
+              const eastSeat = (southSeat + 2) % 3;
+              const roleTextForSeat = (seat: number) => {
+                if (typeof landlord !== 'number') return lang === 'en' ? 'Pending' : '待定';
+                return landlord === seat
+                  ? (lang === 'en' ? 'Landlord' : '地主')
+                  : (lang === 'en' ? 'Peasant' : '农民');
+              };
+              const roleIconForSeat = (seat: number) => (typeof landlord === 'number' && landlord === seat ? '👑' : '⚔️');
+              const renderSeatHand = (seat: number, align: 'flex-start' | 'flex-end' | 'center', key: string, isSouth = false) => {
+                const seatInteractive = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play' && !humanExpired);
+                return (
+                  <div key={key} className={styles.boardSeatSlot} style={{ alignItems:align }}>
+                    <div className={styles.boardRoleTag}>
+                      <span style={{ fontSize:22, lineHeight:1 }}>{roleIconForSeat(seat)}</span>
+                      <span>{roleTextForSeat(seat)}</span>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span className={styles.boardSeatBadge}>{seatDisplayNames[seat] || seatName(seat)}</span>
+                      <span
+                        className={styles.boardSeatBadge}
+                        style={{
+                          minWidth: 64,
+                          background: 'linear-gradient(120deg, #0f766e, #14b8a6)',
+                          fontSize: 18,
+                          padding: '0 10px',
+                        }}
+                      >
+                        {totals[seat]}
+                      </span>
+                    </div>
+                    <div className={isSouth ? styles.boardSeatHandAreaSouth : styles.boardSeatHandArea}>
+                      <Hand
+                        cards={hands[seat]}
+                        interactive={seatInteractive}
+                        selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+                        onToggle={seatInteractive ? toggleHumanCard : undefined}
+                        disabled={humanSubmitting || humanExpired}
+                      />
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <>
+                  <div className={styles.boardSeatRow}>
+                    {renderSeatHand(westSeat, 'flex-start', `top-west-${westSeat}`)}
+                    {renderSeatHand(eastSeat, 'flex-end', `top-east-${eastSeat}`)}
+                  </div>
+
+                  <div className={`${styles.boardCenter} ${styles.boardCenterStable}`}>
+                    {(() => {
+                      const latestBySeat = (seat: number) => {
+                        for (let idx = plays.length - 1; idx >= 0; idx -= 1) {
+                          if (plays[idx]?.seat === seat) return plays[idx];
+                        }
+                        return null;
+                      };
+                      const order: Array<{ seat: number; left: string; top: string; align: 'flex-start' | 'center' | 'flex-end' }> = [
+                        { seat: westSeat, left: '15%', top: '26%', align: 'flex-start' },
+                        { seat: eastSeat, left: '85%', top: '26%', align: 'flex-end' },
+                        { seat: southSeat, left: '50%', top: '66%', align: 'center' },
+                      ];
+                      const hasAnyPlay = plays.length > 0;
+                      return (
+                        <div style={{ position:'relative', width:'100%', minHeight:250 }}>
+                          {!hasAnyPlay && (
+                            <div
+                              style={{
+                                position:'absolute',
+                                left:'50%',
+                                top:'46%',
+                                transform:'translate(-50%, -50%)',
+                                color:'rgba(241, 245, 249, 0.95)',
+                                fontWeight:700,
+                              }}
+                            >
+                              {lang === 'en' ? 'No plays yet' : '（尚无出牌）'}
+                            </div>
+                          )}
+                          {order.map(({ seat, left, top, align }) => {
+                            const entry = latestBySeat(seat);
+                            return (
+                              <div
+                                key={`latest-${seat}`}
+                                style={{
+                                  position:'absolute',
+                                  left,
+                                  top,
+                                  transform:'translate(-50%, -50%)',
+                                  minWidth:120,
+                                  display:'flex',
+                                  flexDirection:'column',
+                                  alignItems:align,
+                                  gap:4,
+                                }}
+                              >
+                                {entry ? (
+                                  entry.move === 'pass'
+                                    ? <div style={{ fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{lang === 'en' ? 'Pass' : '不出'}</div>
+                                    : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  <div className={styles.boardBottomCards}>
+                    <div style={{ fontSize:12, color:'rgba(226, 232, 240, 0.95)', marginBottom:4, fontWeight:700 }}>{lang === 'en' ? 'Landlord Bottom' : '地主底牌'}</div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {bottomInfo.cards.length > 0 ? bottomInfo.cards.map((c, idx) => (
+                        <Card key={`lord-bottom-${c.label}-${idx}`} label={c.label} compact dimmed={!!c.used} />
+                      )) : <span style={{ opacity:0.7, color:'#e2e8f0' }}>—</span>}
+                    </div>
+                  </div>
+
+                  <div className={styles.boardBottom}>
+                    {renderSeatHand(southSeat, 'center', `south-${southSeat}`, true)}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
         </div>
+
       </Section>
 
       <Section title="结果">
@@ -7301,6 +7403,7 @@ function DdzRenderer() {
           { value: 'ai:kimi', label: 'Kimi' },
           { value: 'ai:qwen', label: 'Qwen' },
           { value: 'ai:deepseek', label: 'DeepSeek' },
+          { value: 'ai:douzero', label: 'DouZero' },
           { value: 'http', label: 'HTTP' },
         ],
       },
@@ -7408,6 +7511,33 @@ function DdzRenderer() {
               若收到 402 余额不足，可尝试填写 v1beta 路径：如 https://api.deepseek.com/v1beta。
             </div>
           </label>,
+        );
+      }
+      if (choice === 'ai:douzero') {
+        blocks.push(
+          <label key={`douzero-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            DouZero Endpoint / URL
+            <input
+              type="text"
+              value={seatKeys[i]?.httpBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), httpBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+              placeholder="http://127.0.0.1:5000/douzero"
+            />
+          </label>,
+        );
+        blocks.push(pushKeyField('httpToken', 'DouZero Token（可选）'));
+        blocks.push(
+          <div key={`douzero-hint-${i}`} style={{ fontSize: 12, color: '#6b7280', marginTop: -2, marginBottom: 6 }}>
+            未填写时默认走本地命令模式（内置 DOUZERO_LOCAL_CMD），也可配置 DOUZERO_LOCAL_CMD / DOUZERO_LOCAL_INNER_CMD 覆盖；若需 HTTP bridge 再填写 DouZero Endpoint / URL。
+          </div>,
         );
       }
       if (choice === 'http') {
@@ -8200,4 +8330,3 @@ function ScoreTimeline(
     </div>
   );
 }
-
