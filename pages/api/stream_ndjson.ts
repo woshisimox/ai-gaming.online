@@ -119,9 +119,12 @@ declare global {
   var __DOUZERO_BRIDGE_UNAVAILABLE_UNTIL: number | undefined;
   // eslint-disable-next-line no-var
   var __DOUZERO_BRIDGE_LAST_ERROR: string | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_LAST_STDERR: string | undefined;
 }
 
 const DOUZERO_RETRY_COOLDOWN_MS = 30_000;
+const DOUZERO_STARTUP_DEBUG_INTERVAL_MS = 5_000;
 
 async function endpointReachable(url: string): Promise<boolean> {
   const target = (url || '').trim();
@@ -152,6 +155,40 @@ async function endpointReachable(url: string): Promise<boolean> {
 }
 
 
+
+
+async function inspectDouZeroEndpoint(endpoint: string): Promise<{
+  endpointHead: boolean;
+  endpointGet: boolean;
+  originHead: boolean;
+  originGet: boolean;
+}> {
+  const probe = async (probeUrl: string, method: 'GET' | 'HEAD') => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), DOUZERO_HEALTHCHECK_TIMEOUT_MS);
+    try {
+      const res = await fetch(probeUrl, { method, signal: ac.signal });
+      return !!res;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  try {
+    const u = new URL(endpoint);
+    const origin = `${u.protocol}//${u.host}`;
+    const [endpointHead, endpointGet, originHead, originGet] = await Promise.all([
+      probe(endpoint, 'HEAD'),
+      probe(endpoint, 'GET'),
+      probe(origin, 'HEAD'),
+      probe(origin, 'GET'),
+    ]);
+    return { endpointHead, endpointGet, originHead, originGet };
+  } catch {
+    return { endpointHead: false, endpointGet: false, originHead: false, originGet: false };
+  }
+}
 
 function acquireDouZeroBridgeLease(): void {
   const n = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
@@ -193,6 +230,9 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
     globalThis.__DOUZERO_BRIDGE_STARTING = (async () => {
       if (!globalThis.__DOUZERO_BRIDGE_PROC || globalThis.__DOUZERO_BRIDGE_PROC.exitCode !== null) {
         const shell = process.env.SHELL || '/bin/bash';
+        try {
+          console.log('[douzero:auto-start] spawning bridge', JSON.stringify({ endpoint, shell, cmd: autoStartCmd, cwd: process.cwd() }));
+        } catch {}
         const child = spawn(shell, ['-lc', autoStartCmd], {
           env: process.env,
           stdio: 'pipe',
@@ -200,25 +240,52 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
         });
         globalThis.__DOUZERO_BRIDGE_PROC = child;
         globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP = true;
+        globalThis.__DOUZERO_BRIDGE_LAST_STDERR = '';
+        child.on('error', (err) => {
+          try { console.warn('[douzero:auto-start] process error', err?.message || String(err)); } catch {}
+        });
         child.stdout?.on('data', (buf) => {
           try { console.log('[douzero:auto-start][stdout]', String(buf).trim()); } catch {}
         });
         child.stderr?.on('data', (buf) => {
-          try { console.warn('[douzero:auto-start][stderr]', String(buf).trim()); } catch {}
+          const text = String(buf).trim();
+          globalThis.__DOUZERO_BRIDGE_LAST_STDERR = text.slice(-400);
+          try { console.warn('[douzero:auto-start][stderr]', text); } catch {}
         });
-        child.on('exit', (code) => {
-          try { console.warn('[douzero:auto-start] process exited', code); } catch {}
+        child.on('exit', (code, signal) => {
+          try { console.warn('[douzero:auto-start] process exited', JSON.stringify({ code, signal })); } catch {}
         });
       }
 
       const timeoutMsRaw = Number(process.env.DOUZERO_AUTO_START_TIMEOUT_MS || '60000');
       const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(1000, Math.floor(timeoutMsRaw)) : 60000;
       const deadline = Date.now() + timeoutMs;
+      let nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
       while (Date.now() < deadline) {
         if (await endpointReachable(endpoint)) return;
+        if (Date.now() >= nextDebugAt) {
+          nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
+          try {
+            const c = globalThis.__DOUZERO_BRIDGE_PROC;
+            console.warn('[douzero:auto-start] waiting endpoint', JSON.stringify({
+              endpoint,
+              pid: c?.pid || null,
+              exitCode: c?.exitCode ?? null,
+              lastStderr: (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').slice(-200),
+            }));
+          } catch {}
+        }
         await new Promise((r) => setTimeout(r, 400));
       }
-      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint} (cmd=${autoStartCmd})`);
+      const endpointStatus = await inspectDouZeroEndpoint(endpoint);
+      const child = globalThis.__DOUZERO_BRIDGE_PROC;
+      const diagnosis = child && child.exitCode !== null
+        ? 'bridge process exited early: likely missing Python module or startup command failure'
+        : (endpointStatus.originHead || endpointStatus.originGet)
+          ? 'origin reachable but endpoint path unavailable: likely wrong DOUZERO_BRIDGE_PATH/route'
+          : 'origin unreachable: bridge did not listen on expected host/port';
+      const stderrHint = (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').trim();
+      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint} (cmd=${autoStartCmd}); diagnose=${diagnosis}; endpointProbe=${JSON.stringify(endpointStatus)}${stderrHint ? `; lastStderr=${stderrHint}` : ''}`);
     })().finally(() => {
       globalThis.__DOUZERO_BRIDGE_STARTING = null;
     });
