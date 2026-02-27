@@ -5100,6 +5100,7 @@ const LivePanel = forwardRef<LivePanelHandle, LiveProps>(function LivePanel(prop
   const logRef = useRef(log); useEffect(() => { logRef.current = log; }, [log]);
   const landlordRef = useRef(landlord); useEffect(() => { landlordRef.current = landlord; }, [landlord]);
   const winnerRef = useRef(winner); useEffect(() => { winnerRef.current = winner; }, [winner]);
+  const handSettledRef = useRef(false);
   const deltaRef = useRef(delta); useEffect(() => { deltaRef.current = delta; }, [delta]);
   const multiplierRef = useRef(multiplier); useEffect(() => { multiplierRef.current = multiplier; }, [multiplier]);
   const bidMultiplierRef = useRef(bidMultiplier); useEffect(() => { bidMultiplierRef.current = bidMultiplier; }, [bidMultiplier]);
@@ -5508,6 +5509,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                 resetHandReveal();
                 suitUsageRef.current = new Map();
                 roundBaseTotalsRef.current = [nextTotals[0], nextTotals[1], nextTotals[2]] as [number, number, number];
+                handSettledRef.current = false;
 
                 nextLog = [...nextLog, `【边界】round-start #${m.round}`];
                 continue;
@@ -5528,6 +5530,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                   nextDeckAudit = null;
                   deckAuditChanged = true;
                 }
+                handSettledRef.current = false;
                 continue;
               }
               if (m.type === 'event' && m.kind === 'round-end') {
@@ -5568,6 +5571,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
                     ? rawLord
                     : null;
                   nextLandlord = lord;
+                  handSettledRef.current = false;
                   const bottomRaw = Array.isArray(m.bottom)
                     ? (m.bottom as string[])
                     : Array.isArray(m.payload?.bottom)
@@ -6133,7 +6137,10 @@ if (m.type === 'event' && (m.kind === 'extra-double' || m.kind === 'post-double'
               }
 
               // -------- 出/过 --------
-              
+              if (handSettledRef.current && (m.type === 'turn' || (m.type === 'event' && m.kind === 'play'))) {
+                continue;
+              }
+
                 // （fallback）若本批次没有收到 'turn' 行，则从 event:play 中恢复 score
                 if (!sawAnyTurn) {
                   const s = (typeof m.seat === 'number') ? m.seat as number : -1;
@@ -6240,6 +6247,7 @@ if (m.type === 'event' && m.kind === 'play') {
                 (m.type === 'event' && (m.kind === 'win' || m.kind === 'result' || m.kind === 'game-over' || m.kind === 'game_end')) ||
                 (m.type === 'result') || (m.type === 'game-over') || (m.type === 'game_end');
               if (isWinLike) {
+                handSettledRef.current = true;
                 const L = (nextLandlord ?? 0) as number;
                 const prevTotals = (() => {
                   const stored = roundBaseTotalsRef.current;
