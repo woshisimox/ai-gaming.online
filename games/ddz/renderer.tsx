@@ -7075,7 +7075,7 @@ const handleAllSaveInner = () => {
                 return (
                   <div key={key} className={styles.boardSeatSlot} style={{ alignItems:align }}>
                     <div className={styles.boardRoleTag}>
-                      <span style={{ fontSize:28 }}>{roleIconForSeat(seat)}</span>
+                      <span style={{ fontSize:22, lineHeight:1 }}>{roleIconForSeat(seat)}</span>
                       <span>{roleTextForSeat(seat)}</span>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
