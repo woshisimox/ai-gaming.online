@@ -14,6 +14,7 @@ import {
 } from '../../lib/doudizhu/engine';
 import { OpenAIBot } from '../../lib/bots/openai_bot';
 import { GeminiBot } from '../../lib/bots/gemini_bot';
+import { DouZeroBot } from '../../lib/bots/douzero_bot';
 import { GrokBot } from '../../lib/bots/grok_bot';
 import { HttpBot } from '../../lib/bots/http_bot';
 import { KimiBot } from '../../lib/bots/kimi_bot';
@@ -360,7 +361,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek' | 'ai:douzero'
   | 'http'
   | 'human';
 
@@ -402,6 +403,7 @@ function providerLabel(choice: BotChoice) {
     case 'ai:kimi': return 'Kimi';
     case 'ai:qwen': return 'Qwen';
     case 'ai:deepseek': return 'DeepSeek';
+    case 'ai:douzero': return 'DouZero';
     case 'http': return 'HTTP';
   }
 }
@@ -449,6 +451,15 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
       const model = (spec?.model || '').trim();
       if (!model) throw new Error('DeepSeek 模型未配置');
       return DeepseekBot({ apiKey: spec?.apiKey || '', model, baseUrl: spec?.baseUrl });
+    }
+    case 'ai:douzero': {
+      const model = (spec?.model || '').trim() || 'douzero';
+      return DouZeroBot({
+        model,
+        baseUrl: (spec?.baseUrl || '').replace(/\/$/, ''),
+        token: spec?.token || '',
+        apiKey: spec?.apiKey || '',
+      });
     }
     case 'http':       return HttpBot({ base: (spec?.baseUrl||'').replace(/\/$/,''), token: spec?.token || '' });
     default:           return GreedyMax;

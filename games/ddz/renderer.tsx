@@ -368,7 +368,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek' | 'ai:douzero'
   | 'http'
   | 'human';
 
@@ -444,6 +444,7 @@ const KO_ALL_CHOICES: BotChoice[] = [
   'ai:kimi',
   'ai:qwen',
   'ai:deepseek',
+  'ai:douzero',
   'http',
   'human',
 ];
@@ -524,7 +525,7 @@ function makeDefaultKnockoutEntries(): KnockoutEntry[] {
 }
 
 function readProviderBase(choice: BotChoice, keys?: BotCredentials | null): string {
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     return (keys?.httpBase || '').trim();
   }
   if (choice === 'ai:deepseek') {
@@ -545,7 +546,7 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   if (typeof base.deepseekBase === 'string') out.deepseekBase = base.deepseekBase;
   if (typeof base.httpBase === 'string') out.httpBase = base.httpBase;
   if (typeof base.httpToken === 'string') out.httpToken = base.httpToken;
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     if (out.httpBase === undefined) out.httpBase = '';
     if (out.httpToken === undefined) out.httpToken = '';
   }
@@ -556,7 +557,7 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
 }
 
 function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     const base = typeof raw?.httpBase === 'string' ? raw.httpBase : '';
     return base ? { httpBase: base } : {};
   }
@@ -570,7 +571,7 @@ function reviveStoredKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
 function persistableKnockoutEntry(entry: KnockoutEntry) {
   const { keys, ...rest } = entry;
   const safe: BotCredentials = {};
-  if (entry.choice === 'http') {
+  if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
     const base = typeof keys?.httpBase === 'string' ? keys.httpBase.trim() : '';
     if (base) safe.httpBase = base;
   } else if (entry.choice === 'ai:deepseek') {
@@ -1715,7 +1716,7 @@ const writeThoughtStore = (store: ThoughtStore): ThoughtStore => writeLatencySto
 
 const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
   'built-in:greedy-max','built-in:greedy-min','built-in:random-legal','built-in:mininet','built-in:ally-support','built-in:endgame-rush','built-in:advanced-hybrid',
-  'ai:openai','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','http','human',
+  'ai:openai','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','ai:douzero','http','human',
 ];
 const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeThoughtIdentity(choice));
 
@@ -1737,7 +1738,7 @@ function thoughtLabelForIdentity(id: string): string {
     const displayModel = (model || '').trim();
     return displayModel ? `${label}:${displayModel}` : label;
   }
-  if (choice === 'http') {
+  if (choice === 'http' || choice === 'ai:douzero') {
     const trimmed = (base || '').trim();
     return trimmed ? `${label}:${trimmed}` : label;
   }
@@ -2092,7 +2093,7 @@ function KnockoutPanel() {
     if (entry.choice.startsWith('ai:')) {
       payload.model = entry.model.trim();
     }
-    if (entry.choice === 'http') {
+    if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
       payload.httpBase = readProviderBase(entry.choice, entry.keys);
     }
     if (entry.choice === 'ai:deepseek') {
@@ -2113,7 +2114,7 @@ function KnockoutPanel() {
       const model = entry.model.trim();
       if (model) payload.model = model;
     }
-    if (entry.choice === 'http') {
+    if (entry.choice === 'http' || entry.choice === 'ai:douzero') {
       const base = readProviderBase(entry.choice, entry.keys);
       if (base) payload.httpBase = base;
     }
@@ -2276,6 +2277,9 @@ function KnockoutPanel() {
                 if (normalizedChoice === 'ai:deepseek') {
                   return typeof (parsed as any).deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
                 }
+                if (normalizedChoice === 'ai:douzero') {
+                  return typeof (parsed as any).httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+                }
                 return '';
               })();
               const customBase = entryBase || tokenBase;
@@ -2324,6 +2328,9 @@ function KnockoutPanel() {
           if (normalizedChoice === 'ai:deepseek') {
             return typeof (parsed as any)?.deepseekBase === 'string' ? ((parsed as any).deepseekBase as string) : '';
           }
+          if (normalizedChoice === 'ai:douzero') {
+            return typeof (parsed as any)?.httpBase === 'string' ? ((parsed as any).httpBase as string) : '';
+          }
           return '';
         })();
         const providerLabel = normalizedChoice
@@ -2367,6 +2374,9 @@ function KnockoutPanel() {
           }
           if (rawChoice === 'ai:deepseek') {
             return typeof parsed?.deepseekBase === 'string' ? parsed.deepseekBase : '';
+          }
+          if (rawChoice === 'ai:douzero') {
+            return typeof parsed?.httpBase === 'string' ? parsed.httpBase : '';
           }
           return '';
         })();
@@ -3203,6 +3213,7 @@ function KnockoutPanel() {
                       <option value="ai:kimi">Kimi</option>
                       <option value="ai:qwen">Qwen</option>
                       <option value="ai:deepseek">DeepSeek</option>
+                      <option value="ai:douzero">DouZero</option>
                       <option value="http">HTTP</option>
                     </optgroup>
                     <optgroup label={lang === 'en' ? 'Human' : '人类选手'}>
@@ -3311,6 +3322,30 @@ function KnockoutPanel() {
                       如果官方接口返回 402，可尝试将基础地址改为 v1beta。
                     </div>
                   </label>
+                )}
+
+                {entry.choice === 'ai:douzero' && (
+                  <>
+                    <label style={{ display:'block' }}>
+                      DouZero Endpoint / URL
+                      <input
+                        type="text"
+                        value={entry.keys?.httpBase || ''}
+                        onChange={e => handleEntryKeyChange(entry.id, 'httpBase', e.target.value)}
+                        style={{ width:'100%', marginTop:4 }}
+                        placeholder="http://127.0.0.1:5000/douzero"
+                      />
+                    </label>
+                    <label style={{ display:'block' }}>
+                      DouZero Token（可选）
+                      <input
+                        type="password"
+                        value={entry.keys?.httpToken || ''}
+                        onChange={e => handleEntryKeyChange(entry.id, 'httpToken', e.target.value)}
+                        style={{ width:'100%', marginTop:4 }}
+                      />
+                    </label>
+                  </>
                 )}
 
                 {entry.choice === 'http' && (
@@ -3761,6 +3796,7 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
     case 'ai:qwen':   return /^qwen[-\w.]*/.test(low) ? m : '';
     case 'ai:deepseek': return /^deepseek[-\w.]*/.test(low) ? m : '';
+    case 'ai:douzero': return /^douzero[-\w.]*/.test(low) ? m : '';
     default: return '';
   }
 }
@@ -3772,6 +3808,7 @@ const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
   'ai:kimi': 'kimi-k2-0905-preview',
   'ai:qwen': 'qwen-plus',
   'ai:deepseek': 'deepseek-chat',
+  'ai:douzero': 'douzero-resnet',
 };
 
 function defaultModelForChoice(choice: BotChoice): string {
@@ -3798,6 +3835,7 @@ function choiceLabel(choice: BotChoice): string {
     case 'ai:kimi':               return 'Kimi';
     case 'ai:qwen':               return 'Qwen';
     case 'ai:deepseek':           return 'DeepSeek';
+    case 'ai:douzero':            return 'DouZero';
     case 'http':                  return 'HTTP';
     case 'human':                 return 'Human';
     default: return String(choice);
@@ -3812,7 +3850,7 @@ function providerSummary(choice: BotChoice, model: string | undefined, customBas
     const customLabel = lang === 'en' ? 'custom' : '自定义';
     return `${provider} · ${customLabel}`;
   }
-  if (choice === 'ai:deepseek' && base) {
+  if ((choice === 'ai:deepseek' || choice === 'ai:douzero') && base) {
     const customLabel = lang === 'en' ? 'custom base' : '自定义接口';
     return `${provider} · ${customLabel}`;
   }
@@ -5227,6 +5265,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
           case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '', baseUrl: readProviderBase(choice, keys) };
           case 'ai:qwen':     return { choice, model, apiKey: keys.qwen || '' };
           case 'ai:deepseek': return { choice, model, apiKey: keys.deepseek || '', baseUrl: readProviderBase(choice, keys) };
+          case 'ai:douzero':  return { choice, model, baseUrl: readProviderBase(choice, keys), token: keys.httpToken || '' };
           case 'http':        return { choice, model, baseUrl: keys.httpBase || '', token: keys.httpToken || '' };
           default:            return { choice };
         }
@@ -5239,6 +5278,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         if (s.choice.startsWith('built-in')) return `${nm}=${choiceLabel(s.choice as BotChoice)}`;
         if (s.choice === 'http') return `${nm}=HTTP(${s.baseUrl ? 'custom' : 'default'})`;
         if (s.choice === 'ai:deepseek') return `${nm}=DeepSeek(${s.baseUrl ? 'custom' : 'default'})`;
+        if (s.choice === 'ai:douzero') return `${nm}=DouZero(${s.baseUrl ? 'custom' : 'default'})`;
         const model = typeof s.model === 'string' ? s.model.trim() : '';
         const suffix = model ? `(${model})` : '';
         return `${nm}=${choiceLabel(s.choice as BotChoice)}${suffix}`;
@@ -7277,6 +7317,7 @@ function DdzRenderer() {
           { value: 'ai:kimi', label: 'Kimi' },
           { value: 'ai:qwen', label: 'Qwen' },
           { value: 'ai:deepseek', label: 'DeepSeek' },
+          { value: 'ai:douzero', label: 'DouZero' },
           { value: 'http', label: 'HTTP' },
         ],
       },
@@ -7385,6 +7426,28 @@ function DdzRenderer() {
             </div>
           </label>,
         );
+      }
+      if (choice === 'ai:douzero') {
+        blocks.push(
+          <label key={`douzero-base-${i}`} style={{ display: 'block', marginBottom: 6 }}>
+            DouZero Endpoint / URL
+            <input
+              type="text"
+              value={seatKeys[i]?.httpBase || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSeatKeys((arr) => {
+                  const next = [...arr];
+                  next[i] = { ...(next[i] || {}), httpBase: v };
+                  return next;
+                });
+              }}
+              style={{ width: '100%' }}
+              placeholder="http://127.0.0.1:5000/douzero"
+            />
+          </label>,
+        );
+        blocks.push(pushKeyField('httpToken', 'DouZero Token（可选）'));
       }
       if (choice === 'http') {
         blocks.push(
