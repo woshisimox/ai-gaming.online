@@ -7070,10 +7070,10 @@ const handleAllSaveInner = () => {
                   : (lang === 'en' ? 'Peasant' : '农民');
               };
               const roleIconForSeat = (seat: number) => (typeof landlord === 'number' && landlord === seat ? '👑' : '⚔️');
-              const renderSeatHand = (seat: number, align: 'flex-start' | 'flex-end' | 'center', key: string) => {
+              const renderSeatHand = (seat: number, align: 'flex-start' | 'flex-end' | 'center', key: string, isSouth = false) => {
                 const seatInteractive = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play' && !humanExpired);
                 return (
-                  <div key={key} style={{ display:'flex', flexDirection:'column', alignItems:align, gap:10 }}>
+                  <div key={key} className={styles.boardSeatSlot} style={{ alignItems:align }}>
                     <div className={styles.boardRoleTag}>
                       <span style={{ fontSize:28 }}>{roleIconForSeat(seat)}</span>
                       <span>{roleTextForSeat(seat)}</span>
@@ -7092,7 +7092,7 @@ const handleAllSaveInner = () => {
                         {totals[seat]}
                       </span>
                     </div>
-                    <div style={{ maxWidth:340 }}>
+                    <div className={isSouth ? styles.boardSeatHandAreaSouth : styles.boardSeatHandArea}>
                       <Hand
                         cards={hands[seat]}
                         interactive={seatInteractive}
@@ -7112,7 +7112,7 @@ const handleAllSaveInner = () => {
                     {renderSeatHand(eastSeat, 'flex-end', `top-east-${eastSeat}`)}
                   </div>
 
-                  <div className={styles.boardCenter}>
+                  <div className={`${styles.boardCenter} ${styles.boardCenterStable}`}>
                     {plays.length === 0 ? (
                       <div style={{ color:'rgba(241, 245, 249, 0.95)', fontWeight:700 }}>{lang === 'en' ? 'No plays yet' : '（尚无出牌）'}</div>
                     ) : (
@@ -7159,7 +7159,7 @@ const handleAllSaveInner = () => {
                   </div>
 
                   <div className={styles.boardBottom}>
-                    {renderSeatHand(southSeat, 'center', `south-${southSeat}`)}
+                    {renderSeatHand(southSeat, 'center', `south-${southSeat}`, true)}
                   </div>
                 </>
               );

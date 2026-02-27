@@ -262,6 +262,7 @@
   position: relative;
   border-radius: 28px;
   padding: 22px;
+  min-height: 980px;
   background: radial-gradient(circle at 50% 20%, #29598f 0%, #1d3f69 55%, #122744 100%);
   overflow: hidden;
 }
@@ -279,6 +280,7 @@
 .boardLayer {
   position: relative;
   z-index: 1;
+  min-height: 930px;
 }
 
 .boardSeatRow {
@@ -299,6 +301,33 @@
   color: #fff;
   font-weight: 800;
   letter-spacing: 0.5px;
+}
+
+
+.boardSeatSlot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.boardSeatHandArea {
+  width: 340px;
+  min-height: 162px;
+  max-height: 162px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.boardSeatHandAreaSouth {
+  width: 420px;
+  min-height: 128px;
+  max-height: 128px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.boardCenterStable {
+  min-height: 210px;
 }
 
 .boardRoleTag {
