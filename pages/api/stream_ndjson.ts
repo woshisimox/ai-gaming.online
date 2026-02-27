@@ -126,7 +126,9 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
   if (await endpointReachable(endpoint)) return;
 
   const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || '').trim();
-  if (!autoStartCmd) return;
+  if (!autoStartCmd) {
+    throw new Error(`DouZero bridge 不可达：${endpoint}。请先启动本地 bridge，或设置环境变量 DOUZERO_AUTO_START_CMD 以自动拉起。`);
+  }
 
   if (!globalThis.__DOUZERO_BRIDGE_STARTING) {
     globalThis.__DOUZERO_BRIDGE_STARTING = (async () => {
@@ -525,7 +527,7 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
     case 'ai:douzero': {
       const model = (spec?.model || '').trim() || 'douzero';
       const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '');
-      const normalizedBase = baseUrl || ((process.env.DOUZERO_AUTO_START_CMD || '').trim() ? DOUZERO_BRIDGE_DEFAULT_BASE : '');
+      const normalizedBase = baseUrl || DOUZERO_BRIDGE_DEFAULT_BASE;
       const bot = DouZeroBot({
         model,
         baseUrl: normalizedBase,
