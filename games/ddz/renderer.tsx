@@ -7016,9 +7016,10 @@ const handleAllSaveInner = () => {
           <div className={styles.boardLayer}>
             {(() => {
               const southSeat = (typeof landlord === 'number' && landlord >= 0 && landlord < 3) ? landlord : 2;
-              const topSeats = [0, 1, 2].filter(seat => seat !== southSeat);
-              const westSeat = topSeats[0] ?? 0;
-              const eastSeat = topSeats[1] ?? 1;
+              // 固定顺时针座位顺序：west -> south -> east
+              // 因此在 southSeat 已知时：west = south+1, east = south+2 (mod 3)
+              const westSeat = (southSeat + 1) % 3;
+              const eastSeat = (southSeat + 2) % 3;
               const roleTextForSeat = (seat: number) => {
                 if (typeof landlord !== 'number') return lang === 'en' ? 'Pending' : '待定';
                 return landlord === seat
