@@ -18,6 +18,7 @@ import {
 import { OpenAIBot } from '../../lib/bots/openai_bot';
 import { GeminiBot } from '../../lib/bots/gemini_bot';
 import { DouZeroBot } from '../../lib/bots/douzero_bot';
+import { DouZeroLocalBot } from '../../lib/bots/douzero_local_bot';
 import { GrokBot } from '../../lib/bots/grok_bot';
 import { HttpBot } from '../../lib/bots/http_bot';
 import { KimiBot } from '../../lib/bots/kimi_bot';
@@ -663,6 +664,16 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
     case 'ai:douzero': {
       const model = (spec?.model || '').trim() || 'douzero';
       const baseUrl = (spec?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '');
+      const localCmd = (!baseUrl && (process.env.DOUZERO_LOCAL_CMD || '').trim()) || '';
+
+      if (localCmd) {
+        const localTimeoutRaw = Number(process.env.DOUZERO_LOCAL_TIMEOUT_MS || '15000');
+        const localTimeoutMs = Number.isFinite(localTimeoutRaw) ? Math.max(500, Math.floor(localTimeoutRaw)) : 15000;
+        const localBot = DouZeroLocalBot({ cmd: localCmd, model, timeoutMs: localTimeoutMs });
+        (localBot as any).phaseAware = true;
+        return localBot as any;
+      }
+
       const normalizedBase = baseUrl || DOUZERO_BRIDGE_DEFAULT_BASE;
       const bot = DouZeroBot({
         model,
@@ -1272,7 +1283,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const turnTimeoutMsArr = parseTurnTimeoutMsArr(req);
     const seatSpecs = (body.seats || []).slice(0,3) as SeatSpec[];
     hasDouZeroSeat = seatSpecs.some((s) => s?.choice === 'ai:douzero');
-    if (hasDouZeroSeat) {
+    const localCmdEnabled = !!(process.env.DOUZERO_LOCAL_CMD || '').trim();
+    if (hasDouZeroSeat && localCmdEnabled) {
+      writeLine(res, { type:'log', message:'DouZero local mode enabled via DOUZERO_LOCAL_CMD (no bridge warmup required)' });
+    }
+    if (hasDouZeroSeat && !localCmdEnabled) {
       acquireDouZeroBridgeLease();
       const dzSeat = seatSpecs.find((s) => s?.choice === 'ai:douzero');
       const dzBase = (dzSeat?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '') || DOUZERO_BRIDGE_DEFAULT_BASE;
