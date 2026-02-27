@@ -7078,7 +7078,20 @@ const handleAllSaveInner = () => {
                       <span style={{ fontSize:28 }}>{roleIconForSeat(seat)}</span>
                       <span>{roleTextForSeat(seat)}</span>
                     </div>
-                    <span className={styles.boardSeatBadge}>ID {seat}</span>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span className={styles.boardSeatBadge}>{seatDisplayNames[seat] || seatName(seat)}</span>
+                      <span
+                        className={styles.boardSeatBadge}
+                        style={{
+                          minWidth: 64,
+                          background: 'linear-gradient(120deg, #0f766e, #14b8a6)',
+                          fontSize: 18,
+                          padding: '0 10px',
+                        }}
+                      >
+                        {totals[seat]}
+                      </span>
+                    </div>
                     <div style={{ maxWidth:340 }}>
                       <Hand
                         cards={hands[seat]}
@@ -7114,7 +7127,7 @@ const handleAllSaveInner = () => {
                           <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(120px, 1fr))', gap:10, width:'100%' }}>
                             {latestPerSeat.map((entry, seat) => (
                               <div key={`latest-${seat}`} style={{ border:'1px solid rgba(191, 219, 254, 0.3)', borderRadius:12, padding:'8px 10px', background:'rgba(15, 23, 42, 0.22)', color:'#e2e8f0' }}>
-                                <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{lang === 'en' ? `Seat ${seat}` : `座位 ${seat}`}</div>
+                                <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{seatDisplayNames[seat] || seatName(seat)}</div>
                                 {entry ? (
                                   entry.move === 'pass'
                                     ? <div style={{ fontWeight:700 }}>{lang === 'en' ? 'Pass' : '不出'}</div>
