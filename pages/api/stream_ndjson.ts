@@ -1,6 +1,8 @@
 // pages/api/stream_ndjson.ts
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { join as pathJoin } from 'path';
 import {
   runOneGame,
   GreedyMax,
@@ -98,7 +100,11 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 
 const DOUZERO_BRIDGE_DEFAULT_BASE = 'http://127.0.0.1:5000/douzero';
-const DOUZERO_BRIDGE_DEFAULT_CMD = 'bash ./scripts/douzero_bridge_autostart.sh';
+const DOUZERO_BRIDGE_DEFAULT_SCRIPT = pathJoin(process.cwd(), 'scripts', 'douzero_bridge_autostart.sh');
+const DOUZERO_BRIDGE_DEFAULT_CMD = existsSync(DOUZERO_BRIDGE_DEFAULT_SCRIPT)
+  ? `bash ${DOUZERO_BRIDGE_DEFAULT_SCRIPT}`
+  : 'bash ./scripts/douzero_bridge_autostart.sh';
+const DOUZERO_HEALTHCHECK_TIMEOUT_MS = 1500;
 
 declare global {
   // eslint-disable-next-line no-var
@@ -114,11 +120,26 @@ declare global {
 async function endpointReachable(url: string): Promise<boolean> {
   const target = (url || '').trim();
   if (!target) return false;
+  const probe = async (probeUrl: string, method: 'GET' | 'HEAD' = 'GET') => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), DOUZERO_HEALTHCHECK_TIMEOUT_MS);
+    try {
+      const res = await fetch(probeUrl, { method, signal: ac.signal });
+      return !!res;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
   try {
     const u = new URL(target);
     const originProbe = `${u.protocol}//${u.host}`;
-    const res = await fetch(originProbe, { method: 'GET' });
-    return !!res;
+    if (await probe(target, 'HEAD')) return true;
+    if (await probe(target, 'GET')) return true;
+    if (await probe(originProbe, 'HEAD')) return true;
+    if (await probe(originProbe, 'GET')) return true;
+    return false;
   } catch {
     return false;
   }
@@ -1167,8 +1188,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const dzSeat = seatSpecs.find((s) => s?.choice === 'ai:douzero');
       const dzBase = (dzSeat?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '') || DOUZERO_BRIDGE_DEFAULT_BASE;
       writeLine(res, { type:'log', message:`DouZero bridge warmup: ${dzBase}` });
-      await ensureDouZeroBridge(dzBase);
-      writeLine(res, { type:'log', message:'DouZero bridge ready' });
+      try {
+        await ensureDouZeroBridge(dzBase);
+        writeLine(res, { type:'log', message:'DouZero bridge ready' });
+      } catch (bridgeErr: any) {
+        writeLine(res, { type:'log', message:`DouZero bridge warmup failed: ${bridgeErr?.message || String(bridgeErr)}` });
+      }
     }
     const baseBots = seatSpecs.map((s) => asBot(s.choice, s));
     const delays = ((body.seatDelayMs || []) as number[]);
