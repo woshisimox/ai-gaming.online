@@ -177,8 +177,8 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
         });
       }
 
-      const timeoutMsRaw = Number(process.env.DOUZERO_AUTO_START_TIMEOUT_MS || '15000');
-      const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(1000, Math.floor(timeoutMsRaw)) : 15000;
+      const timeoutMsRaw = Number(process.env.DOUZERO_AUTO_START_TIMEOUT_MS || '60000');
+      const timeoutMs = Number.isFinite(timeoutMsRaw) ? Math.max(1000, Math.floor(timeoutMsRaw)) : 60000;
       const deadline = Date.now() + timeoutMs;
       while (Date.now() < deadline) {
         if (await endpointReachable(endpoint)) return;
@@ -1162,7 +1162,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const turnTimeoutMsArr = parseTurnTimeoutMsArr(req);
     const seatSpecs = (body.seats || []).slice(0,3) as SeatSpec[];
     hasDouZeroSeat = seatSpecs.some((s) => s?.choice === 'ai:douzero');
-    if (hasDouZeroSeat) acquireDouZeroBridgeLease();
+    if (hasDouZeroSeat) {
+      acquireDouZeroBridgeLease();
+      const dzSeat = seatSpecs.find((s) => s?.choice === 'ai:douzero');
+      const dzBase = (dzSeat?.baseUrl || process.env.DOUZERO_BASE_URL || process.env.DOUZERO_LOCAL_BASE_URL || '').trim().replace(/\/$/, '') || DOUZERO_BRIDGE_DEFAULT_BASE;
+      writeLine(res, { type:'log', message:`DouZero bridge warmup: ${dzBase}` });
+      await ensureDouZeroBridge(dzBase);
+      writeLine(res, { type:'log', message:'DouZero bridge ready' });
+    }
     const baseBots = seatSpecs.map((s) => asBot(s.choice, s));
     const delays = ((body.seatDelayMs || []) as number[]);
 
