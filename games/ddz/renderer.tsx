@@ -7123,23 +7123,35 @@ const handleAllSaveInner = () => {
                           }
                           return null;
                         };
-                        const order: Array<{ seat: number; gridColumn: string; gridRow: string }> = [
-                          { seat: westSeat, gridColumn: '1 / span 1', gridRow: '1' },
-                          { seat: eastSeat, gridColumn: '3 / span 1', gridRow: '1' },
-                          { seat: southSeat, gridColumn: '2 / span 1', gridRow: '2' },
+                        const order: Array<{ seat: number; left: string; top: string; align: 'flex-start' | 'center' | 'flex-end' }> = [
+                          { seat: westSeat, left: '15%', top: '26%', align: 'flex-start' },
+                          { seat: eastSeat, left: '85%', top: '26%', align: 'flex-end' },
+                          { seat: southSeat, left: '50%', top: '66%', align: 'center' },
                         ];
                         return (
-                          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, minmax(140px, 1fr))', gridTemplateRows:'auto auto', columnGap:10, rowGap:8, width:'100%' }}>
-                            {order.map(({ seat, gridColumn, gridRow }) => {
+                          <div style={{ position:'relative', width:'100%', minHeight:250 }}>
+                            {order.map(({ seat, left, top, align }) => {
                               const entry = latestBySeat(seat);
                               return (
-                                <div key={`latest-${seat}`} style={{ gridColumn, gridRow, border:'1px solid rgba(191, 219, 254, 0.3)', borderRadius:12, padding:'8px 10px', background:'rgba(15, 23, 42, 0.22)', color:'#e2e8f0' }}>
-                                  <div style={{ fontSize:12, opacity:0.8, marginBottom:4 }}>{seatDisplayNames[seat] || seatName(seat)}</div>
+                                <div
+                                  key={`latest-${seat}`}
+                                  style={{
+                                    position:'absolute',
+                                    left,
+                                    top,
+                                    transform:'translate(-50%, -50%)',
+                                    minWidth:120,
+                                    display:'flex',
+                                    flexDirection:'column',
+                                    alignItems:align,
+                                    gap:4,
+                                  }}
+                                >
                                   {entry ? (
                                     entry.move === 'pass'
-                                      ? <div style={{ fontWeight:700 }}>{lang === 'en' ? 'Pass' : '不出'}</div>
+                                      ? <div style={{ fontWeight:700, color:'rgba(226,232,240,0.9)' }}>{lang === 'en' ? 'Pass' : '不出'}</div>
                                       : <div style={{ display:'flex', flexWrap:'wrap' }}><Hand cards={entry.cards || []} /></div>
-                                  ) : <div style={{ opacity:0.65 }}>—</div>}
+                                  ) : null}
                                 </div>
                               );
                             })}
