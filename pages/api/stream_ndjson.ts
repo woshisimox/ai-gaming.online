@@ -105,6 +105,10 @@ declare global {
   var __DOUZERO_BRIDGE_PROC: ReturnType<typeof spawn> | undefined;
   // eslint-disable-next-line no-var
   var __DOUZERO_BRIDGE_STARTING: Promise<void> | null | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_REFCOUNT: number | undefined;
+  // eslint-disable-next-line no-var
+  var __DOUZERO_BRIDGE_STARTED_BY_APP: boolean | undefined;
 }
 
 async function endpointReachable(url: string): Promise<boolean> {
@@ -118,6 +122,29 @@ async function endpointReachable(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+
+
+function acquireDouZeroBridgeLease(): void {
+  const n = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  globalThis.__DOUZERO_BRIDGE_REFCOUNT = n + 1;
+}
+
+function releaseDouZeroBridgeLease(): void {
+  const n = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  globalThis.__DOUZERO_BRIDGE_REFCOUNT = Math.max(0, n - 1);
+}
+
+async function shutdownDouZeroBridgeIfIdle(): Promise<void> {
+  const ref = Number(globalThis.__DOUZERO_BRIDGE_REFCOUNT || 0);
+  if (ref > 0) return;
+  const startedByApp = !!globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP;
+  const child = globalThis.__DOUZERO_BRIDGE_PROC;
+  if (!startedByApp || !child || child.exitCode !== null) return;
+  try { child.kill('SIGTERM'); } catch {}
+  globalThis.__DOUZERO_BRIDGE_PROC = undefined;
+  globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP = false;
 }
 
 async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
@@ -138,6 +165,7 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
           detached: false,
         });
         globalThis.__DOUZERO_BRIDGE_PROC = child;
+        globalThis.__DOUZERO_BRIDGE_STARTED_BY_APP = true;
         child.stdout?.on('data', (buf) => {
           try { console.log('[douzero:auto-start][stdout]', String(buf).trim()); } catch {}
         });
@@ -532,8 +560,10 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
         token: spec?.token || process.env.DOUZERO_TOKEN || '',
         apiKey: spec?.apiKey || process.env.DOUZERO_API_KEY || '',
       });
+      let bridgeReady: Promise<void> | null = null;
       const wrapped = async (ctx: any) => {
-        await ensureDouZeroBridge(normalizedBase);
+        if (!bridgeReady) bridgeReady = ensureDouZeroBridge(normalizedBase);
+        await bridgeReady;
         return bot(ctx);
       };
       (wrapped as any).phaseAware = true;
@@ -1113,6 +1143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const keepAlive = setInterval(() => { try { (res as any).write('\n'); } catch {} }, 15000);
 
   let sessionKey = '';
+  let hasDouZeroSeat = false;
 
   try {
     const body: RunBody = (req as any).body as any;
@@ -1130,6 +1161,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const turnTimeoutMsArr = parseTurnTimeoutMsArr(req);
     const seatSpecs = (body.seats || []).slice(0,3) as SeatSpec[];
+    hasDouZeroSeat = seatSpecs.some((s) => s?.choice === 'ai:douzero');
+    if (hasDouZeroSeat) acquireDouZeroBridgeLease();
     const baseBots = seatSpecs.map((s) => asBot(s.choice, s));
     const delays = ((body.seatDelayMs || []) as number[]);
 
@@ -1168,6 +1201,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try{ (res as any).end(); }catch{}
     if (sessionKey) {
       try { resetHumanSession(sessionKey); } catch {}
+    }
+    if (hasDouZeroSeat) {
+      releaseDouZeroBridgeLease();
+      try { await shutdownDouZeroBridgeIfIdle(); } catch {}
     }
   }
 }
