@@ -6847,97 +6847,6 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
-            const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                <Hand
-                  cards={hands[i]}
-                  interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
-                  onToggle={seatInteractive ? toggleHumanCard : undefined}
-                  disabled={humanSubmitting || humanExpired}
-                  faceDown={faceDown}
-                />
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                    </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Section>
 
       {humanRequest && (
         <Section title={lang === 'en' ? 'Human control' : '人类操作'}>
@@ -7189,20 +7098,6 @@ const handleAllSaveInner = () => {
           </div>
         </div>
 
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px', marginTop:12 }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))}
-        </div>
       </Section>
 
       <Section title="结果">
