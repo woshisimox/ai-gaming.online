@@ -456,9 +456,9 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
       const model = (spec?.model || '').trim() || 'douzero';
       return DouZeroBot({
         model,
-        baseUrl: (spec?.baseUrl || '').replace(/\/$/, ''),
-        token: spec?.token || '',
-        apiKey: spec?.apiKey || '',
+        baseUrl: (spec?.baseUrl || process.env.DOUZERO_BASE_URL || '').replace(/\/$/, ''),
+        token: spec?.token || process.env.DOUZERO_TOKEN || '',
+        apiKey: spec?.apiKey || process.env.DOUZERO_API_KEY || '',
       });
     }
     case 'http':       return HttpBot({ base: (spec?.baseUrl||'').replace(/\/$/,''), token: spec?.token || '' });

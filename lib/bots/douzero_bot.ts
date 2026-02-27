@@ -19,15 +19,17 @@ export const DouZeroBot = (o: {
   model?: string;
 }): BotFunc =>
   async (ctx: any) => {
-    const endpoint = (o.baseUrl || '').trim().replace(/\/$/, '');
-    if (!endpoint) throw new Error('DouZero endpoint 未配置（baseUrl 为空）');
+    const endpoint = ((o.baseUrl || process.env.DOUZERO_BASE_URL || '').trim()).replace(/\/$/, '');
+    if (!endpoint) {
+      throw new Error('DouZero endpoint 未配置：请在座位设置填写 DouZero Endpoint / URL，或设置环境变量 DOUZERO_BASE_URL');
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(o.token ? { authorization: `Bearer ${o.token}` } : {}),
-        ...(o.apiKey ? { 'x-api-key': o.apiKey } : {}),
+        ...((o.token || process.env.DOUZERO_TOKEN) ? { authorization: `Bearer ${o.token || process.env.DOUZERO_TOKEN}` } : {}),
+        ...((o.apiKey || process.env.DOUZERO_API_KEY) ? { 'x-api-key': o.apiKey || process.env.DOUZERO_API_KEY || '' } : {}),
         'x-bot-provider': 'douzero',
       },
       body: JSON.stringify({

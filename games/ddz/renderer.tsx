@@ -3345,6 +3345,9 @@ function KnockoutPanel() {
                         style={{ width:'100%', marginTop:4 }}
                       />
                     </label>
+                    <div style={{ fontSize:12, color:'#6b7280', marginTop:4 }}>
+                      未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY。
+                    </div>
                   </>
                 )}
 
@@ -3796,7 +3799,7 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
     case 'ai:qwen':   return /^qwen[-\w.]*/.test(low) ? m : '';
     case 'ai:deepseek': return /^deepseek[-\w.]*/.test(low) ? m : '';
-    case 'ai:douzero': return /^douzero[-\w.]*/.test(low) ? m : '';
+    case 'ai:douzero': return m;
     default: return '';
   }
 }
@@ -3808,7 +3811,7 @@ const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
   'ai:kimi': 'kimi-k2-0905-preview',
   'ai:qwen': 'qwen-plus',
   'ai:deepseek': 'deepseek-chat',
-  'ai:douzero': 'douzero-resnet',
+  'ai:douzero': 'douzero',
 };
 
 function defaultModelForChoice(choice: BotChoice): string {
@@ -7448,6 +7451,11 @@ function DdzRenderer() {
           </label>,
         );
         blocks.push(pushKeyField('httpToken', 'DouZero Token（可选）'));
+        blocks.push(
+          <div key={`douzero-hint-${i}`} style={{ fontSize: 12, color: '#6b7280', marginTop: -2, marginBottom: 6 }}>
+            未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY。
+          </div>,
+        );
       }
       if (choice === 'http') {
         blocks.push(
