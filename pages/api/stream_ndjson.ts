@@ -264,10 +264,14 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
       let nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
       while (Date.now() < deadline) {
         if (await endpointReachable(endpoint)) return;
+        const c = globalThis.__DOUZERO_BRIDGE_PROC;
+        if (c && c.exitCode !== null) {
+          const stderrHint = (globalThis.__DOUZERO_BRIDGE_LAST_STDERR || '').trim();
+          throw new Error(`DouZero auto-start failed early: process exited code=${c.exitCode}; endpoint=${endpoint} (cmd=${autoStartCmd})${stderrHint ? `; lastStderr=${stderrHint}` : ''}`);
+        }
         if (Date.now() >= nextDebugAt) {
           nextDebugAt = Date.now() + DOUZERO_STARTUP_DEBUG_INTERVAL_MS;
           try {
-            const c = globalThis.__DOUZERO_BRIDGE_PROC;
             console.warn('[douzero:auto-start] waiting endpoint', JSON.stringify({
               endpoint,
               pid: c?.pid || null,
