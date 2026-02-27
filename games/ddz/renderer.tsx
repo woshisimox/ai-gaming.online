@@ -3368,7 +3368,7 @@ function KnockoutPanel() {
                       />
                     </label>
                     <div style={{ fontSize:12, color:'#6b7280', marginTop:4 }}>
-                      未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY；也可配置 DOUZERO_AUTO_START_CMD 自动拉起本地 DouZero bridge。
+                      未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY；默认会尝试执行内置脚本自动拉起本地 bridge，也可用 DOUZERO_AUTO_START_CMD 覆盖。
                     </div>
                   </>
                 )}
@@ -7536,7 +7536,7 @@ function DdzRenderer() {
         blocks.push(pushKeyField('httpToken', 'DouZero Token（可选）'));
         blocks.push(
           <div key={`douzero-hint-${i}`} style={{ fontSize: 12, color: '#6b7280', marginTop: -2, marginBottom: 6 }}>
-            未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY；也可配置 DOUZERO_AUTO_START_CMD 自动拉起本地 DouZero bridge。
+            未填写时可使用服务端环境变量 DOUZERO_BASE_URL / DOUZERO_TOKEN / DOUZERO_API_KEY；默认会尝试执行内置脚本自动拉起本地 bridge，也可用 DOUZERO_AUTO_START_CMD 覆盖。
           </div>,
         );
       }

@@ -98,6 +98,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 
 const DOUZERO_BRIDGE_DEFAULT_BASE = 'http://127.0.0.1:5000/douzero';
+const DOUZERO_BRIDGE_DEFAULT_CMD = 'bash ./scripts/douzero_bridge_autostart.sh';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -125,10 +126,7 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
 
   if (await endpointReachable(endpoint)) return;
 
-  const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || '').trim();
-  if (!autoStartCmd) {
-    throw new Error(`DouZero bridge 不可达：${endpoint}。请先启动本地 bridge，或设置环境变量 DOUZERO_AUTO_START_CMD 以自动拉起。`);
-  }
+  const autoStartCmd = (process.env.DOUZERO_AUTO_START_CMD || DOUZERO_BRIDGE_DEFAULT_CMD).trim();
 
   if (!globalThis.__DOUZERO_BRIDGE_STARTING) {
     globalThis.__DOUZERO_BRIDGE_STARTING = (async () => {
@@ -158,7 +156,7 @@ async function ensureDouZeroBridge(baseUrl: string): Promise<void> {
         if (await endpointReachable(endpoint)) return;
         await new Promise((r) => setTimeout(r, 400));
       }
-      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint}`);
+      throw new Error(`DouZero auto-start timeout after ${timeoutMs}ms: ${endpoint} (cmd=${autoStartCmd})`);
     })().finally(() => {
       globalThis.__DOUZERO_BRIDGE_STARTING = null;
     });
