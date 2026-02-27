@@ -1734,11 +1734,14 @@ function parseThoughtIdentity(id: string): { choice: BotChoice | string; model: 
 function thoughtLabelForIdentity(id: string): string {
   const { choice, model, base } = parseThoughtIdentity(id);
   const label = choiceLabel(choice as BotChoice);
+  if (choice === 'ai:douzero') {
+    return label;
+  }
   if (typeof choice === 'string' && choice.startsWith('ai:')) {
     const displayModel = (model || '').trim();
     return displayModel ? `${label}:${displayModel}` : label;
   }
-  if (choice === 'http' || choice === 'ai:douzero') {
+  if (choice === 'http') {
     const trimmed = (base || '').trim();
     return trimmed ? `${label}:${trimmed}` : label;
   }
