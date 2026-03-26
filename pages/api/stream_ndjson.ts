@@ -904,18 +904,55 @@ continue;
       countPlay(seat, move, cards);
       const moveStr = stringifyMove({ move, cards });
       const reason = lastReason[seat] || null;
+      const currentHand = Array.isArray(hand) ? hand : [];
       // 确保发送完整的手牌信息
       writeLine(res, { 
         type:'turn', 
         seat, 
         move, 
         cards, 
-        hand: hand || [],  // 确保手牌不为空
+        hand: currentHand,  // 确保手牌不为空
         moveStr, 
         reason, 
         score: (lastScore[seat] ?? undefined), 
         totals 
       });
+      // 兜底：若出牌后该玩家手牌清空，立即判定本局结束，避免前端继续等待后续回合事件。
+      if (!resultSent && move === 'play' && currentHand.length === 0) {
+        const perSeat = [0,1,2].map((i)=>{
+          const s = stats[i];
+          const total = Math.max(1, s.plays + s.passes);
+          const passRate = s.passes / total;
+          const avgCards = s.plays ? (s.cardsPlayed / s.plays) : 0;
+
+          const agg   = clamp(1.5*s.bombs + 2.0*s.rockets + (1-passRate)*3 + Math.min(4, avgCards)*0.25);
+          const cons  = clamp(3 + passRate*2 - (s.bombs + s.rockets)*0.6);
+          let   eff   = clamp(2 + avgCards*0.6 - passRate*1.5);
+          if (seat === i) eff = clamp(eff + 0.8);
+          const coop  = clamp((i===landlordIdx ? 2.0 : 2.5) + passRate*2.5 - (s.bombs + s.rockets)*0.4);
+          const rob   = clamp((i===landlordIdx ? 3.5 : 2.0) + 0.3*s.bombs + 0.6*s.rockets - passRate);
+
+          return { seat: i, scaled: {
+            coop: +coop.toFixed(2),
+            agg : +agg.toFixed(2),
+            cons: +cons.toFixed(2),
+            eff : +eff.toFixed(2),
+            bid: +rob.toFixed(2),
+          }};
+        });
+        writeLine(res, { type:'stats', perSeat });
+        writeLine(res, { type:'event', kind:'stats', perSeat });
+        writeLine(res, {
+          type: 'result',
+          winner: seat,
+          landlord: landlordIdx,
+          landlordIdx,
+          totals: Array.isArray(totals) ? totals : undefined,
+          lastReason: [...lastReason],
+          source: 'turn-empty-hand-fallback',
+        });
+        resultSent = true;
+      }
       // —— 明牌后额外加倍阶段：从地主开始依次决定是否加倍 ——
 if (landlordIdx >= 0) try {
   const __rank = (c:string)=>(c==='x'||c==='X')?c:c.slice(-1);
