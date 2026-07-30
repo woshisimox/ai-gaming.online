@@ -368,7 +368,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:claude' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
   | 'http'
   | 'human';
 
@@ -391,6 +391,7 @@ type KnockoutMatchContext = {
 };
 type BotCredentials = {
   openai?: string;
+  claude?: string;
   gemini?: string;
   grok?: string;
   kimi?: string;
@@ -439,6 +440,7 @@ const KO_ALL_CHOICES: BotChoice[] = [
   'built-in:endgame-rush',
   'built-in:advanced-hybrid',
   'ai:openai',
+  'ai:claude',
   'ai:gemini',
   'ai:grok',
   'ai:kimi',
@@ -537,6 +539,7 @@ function sanitizeKnockoutKeys(choice: BotChoice, raw: any): BotCredentials {
   const base: BotCredentials = typeof raw === 'object' && raw ? raw : {};
   const out: BotCredentials = {};
   if (typeof base.openai === 'string') out.openai = base.openai;
+  if (typeof base.claude === 'string') out.claude = base.claude;
   if (typeof base.gemini === 'string') out.gemini = base.gemini;
   if (typeof base.grok === 'string') out.grok = base.grok;
   if (typeof base.kimi === 'string') out.kimi = base.kimi;
@@ -832,7 +835,7 @@ type LiveProps = {
   seats: BotChoice[];
   seatModels: string[];
   seatKeys: {
-    openai?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string; deepseekBase?: string;
+    openai?: string; claude?: string; gemini?: string; grok?: string; kimi?: string; qwen?: string; deepseek?: string; deepseekBase?: string;
     httpBase?: string; httpToken?: string;
   }[];
   farmerCoop: boolean;
@@ -1733,7 +1736,7 @@ const writeThoughtStore = (store: ThoughtStore): ThoughtStore => writeLatencySto
 
 const THOUGHT_CATALOG_CHOICES: BotChoice[] = [
   'built-in:greedy-max','built-in:greedy-min','built-in:random-legal','built-in:mininet','built-in:ally-support','built-in:endgame-rush','built-in:advanced-hybrid',
-  'ai:openai','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','http','human',
+  'ai:openai','ai:claude','ai:gemini','ai:grok','ai:kimi','ai:qwen','ai:deepseek','http','human',
 ];
 const DEFAULT_THOUGHT_CATALOG_IDS = THOUGHT_CATALOG_CHOICES.map(choice => makeThoughtIdentity(choice));
 
@@ -1760,6 +1763,18 @@ function thoughtLabelForIdentity(id: string): string {
     return trimmed ? `${label}:${trimmed}` : label;
   }
   return label;
+}
+
+function ladderLabelForIdentity(id: string, storedLabel?: string): string {
+  const { choice, model, base } = parseThoughtIdentity(id);
+  const provider = choiceLabel(choice as BotChoice);
+  if (typeof choice === 'string' && choice.startsWith('ai:') && model.trim()) {
+    return `${provider} · ${model.trim()}`;
+  }
+  if (choice === 'http' && base.trim()) {
+    return `${provider} · ${base.trim()}`;
+  }
+  return normalizeIdentityLabel(storedLabel || provider || id);
 }
 
 const normalizeIdentityLabel = (label?: string | null): string => {
@@ -1802,16 +1817,24 @@ function LadderPanel() {
     }
   } catch {}
 
-  const catalogIds = DEFAULT_THOUGHT_CATALOG_IDS;
-  const catalogLabels = (id:string)=> normalizeIdentityLabel(thoughtLabelForIdentity(id));
-
   const players: Record<string, any> = (store?.players)||{};
-  const keys = Array.from(new Set([...Object.keys(players), ...catalogIds]));
+  const playerIds = Object.keys(players);
+  const providersWithSpecificEntries = new Set(
+    playerIds
+      .map(parseThoughtIdentity)
+      .filter(identity => identity.model.trim() || identity.base.trim())
+      .map(identity => identity.choice),
+  );
+  const visibleCatalogIds = DEFAULT_THOUGHT_CATALOG_IDS.filter(id => {
+    const identity = parseThoughtIdentity(id);
+    return !providersWithSpecificEntries.has(identity.choice);
+  });
+  const keys = Array.from(new Set([...playerIds, ...visibleCatalogIds]));
   const arr = keys.map((id)=>{
     const ent = players[id];
     const val = ent?.current?.deltaR ?? 0;
     const n   = ent?.current?.n ?? 0;
-      const label = normalizeIdentityLabel(ent?.label || catalogLabels(id) || id);
+    const label = ladderLabelForIdentity(id, ent?.label);
     const rawMatches = ent?.current?.matches;
     const fallbackMatches = ent?.current?.n;
     const matches = (() => {
@@ -3216,6 +3239,7 @@ function KnockoutPanel() {
                     </optgroup>
                     <optgroup label={lang === 'en' ? 'AI / External' : 'AI / 外置'}>
                       <option value="ai:openai">OpenAI</option>
+                      <option value="ai:claude">Claude</option>
                       <option value="ai:gemini">Gemini</option>
                       <option value="ai:grok">Grok</option>
                       <option value="ai:kimi">Kimi</option>
@@ -3229,19 +3253,12 @@ function KnockoutPanel() {
                   </select>
                 </label>
                 {entry.choice.startsWith('ai:') && (
-                  <label style={{ display:'block' }}>
-                    {lang === 'en' ? 'Model (required)' : '模型（必填）'}
-                    <input
-                      type="text"
-                      value={entry.model}
-                      placeholder={lang === 'en' ? 'Model name' : '请输入模型名称'}
-                      onChange={e => handleEntryModelChange(entry.id, e.target.value)}
-                      style={{ width:'100%', marginTop:4 }}
-                    />
-                    <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
-                      {lang === 'en' ? 'Specify the exact model/version from the provider.' : '请填写提供方的模型或版本名称。'}
-                    </div>
-                  </label>
+                  <ModelVersionField
+                    choice={entry.choice}
+                    value={entry.model}
+                    onChange={value => handleEntryModelChange(entry.id, value)}
+                    lang={lang}
+                  />
                 )}
 
                 {entry.choice === 'ai:openai' && (
@@ -3251,6 +3268,18 @@ function KnockoutPanel() {
                       type="password"
                       value={entry.keys?.openai || ''}
                       onChange={e => handleEntryKeyChange(entry.id, 'openai', e.target.value)}
+                      style={{ width:'100%', marginTop:4 }}
+                    />
+                  </label>
+                )}
+
+                {entry.choice === 'ai:claude' && (
+                  <label style={{ display:'block' }}>
+                    Anthropic API Key
+                    <input
+                      type="password"
+                      value={entry.keys?.claude || ''}
+                      onChange={e => handleEntryKeyChange(entry.id, 'claude', e.target.value)}
                       style={{ width:'100%', marginTop:4 }}
                     />
                   </label>
@@ -3775,6 +3804,7 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
   switch (choice) {
     case 'ai:kimi':   return /^kimi[-\w]*/.test(low) ? m : '';
     case 'ai:openai': return /^(gpt-|o[34]|text-|omni)/.test(low) ? m : '';
+    case 'ai:claude': return /^claude[-\w.]*/.test(low) ? m : '';
     case 'ai:gemini': return /^gemini[-\w.]*/.test(low) ? m : '';
     case 'ai:grok':   return /^grok[-\w.]*/.test(low) ? m : '';
     case 'ai:qwen':   return /^qwen[-\w.]*/.test(low) ? m : '';
@@ -3785,12 +3815,95 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
 
 const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
   'ai:openai': 'gpt-4o-mini',
+  'ai:claude': 'claude-sonnet-4-20250514',
   'ai:gemini': 'gemini-1.5-flash',
   'ai:grok': 'grok-2-latest',
   'ai:kimi': 'kimi-k2-0905-preview',
   'ai:qwen': 'qwen-plus',
   'ai:deepseek': 'deepseek-chat',
 };
+
+const MODEL_OPTIONS_BY_CHOICE: Partial<Record<BotChoice, { value: string; label: string }[]>> = {
+  'ai:openai': [
+    { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'o3-mini', label: 'o3-mini' },
+  ],
+  'ai:claude': [
+    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
+    { value: 'claude-opus-4-1-20250805', label: 'Claude Opus 4.1' },
+    { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+  ],
+  'ai:gemini': [
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+  ],
+  'ai:grok': [
+    { value: 'grok-2-latest', label: 'Grok 2 (latest)' },
+    { value: 'grok-2-mini', label: 'Grok 2 mini' },
+  ],
+  'ai:kimi': [
+    { value: 'kimi-k2-0905-preview', label: 'Kimi K2 0905 Preview' },
+    { value: 'moonshot-v1-32k', label: 'Moonshot v1 32K' },
+  ],
+  'ai:qwen': [
+    { value: 'qwen-plus', label: 'Qwen Plus' },
+    { value: 'qwen-max', label: 'Qwen Max' },
+    { value: 'qwen-turbo', label: 'Qwen Turbo' },
+  ],
+  'ai:deepseek': [
+    { value: 'deepseek-chat', label: 'DeepSeek Chat' },
+    { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
+  ],
+};
+
+const CUSTOM_MODEL_VALUE = '__custom_model__';
+
+function ModelVersionField({
+  choice,
+  value,
+  onChange,
+  lang,
+}: {
+  choice: BotChoice;
+  value: string;
+  onChange: (value: string) => void;
+  lang: Lang;
+}) {
+  const options = MODEL_OPTIONS_BY_CHOICE[choice] || [];
+  const isPreset = options.some(option => option.value === value);
+  const selectValue = isPreset ? value : CUSTOM_MODEL_VALUE;
+  return (
+    <label style={{ display:'block' }}>
+      {lang === 'en' ? 'Model version (required)' : '模型版本（必填）'}
+      <select
+        value={selectValue}
+        onChange={event => {
+          const next = event.target.value;
+          onChange(next === CUSTOM_MODEL_VALUE ? '' : next);
+        }}
+        style={{ width:'100%', marginTop:4 }}
+      >
+        {options.map(option => (
+          <option key={option.value} value={option.value}>{option.label} · {option.value}</option>
+        ))}
+        <option value={CUSTOM_MODEL_VALUE}>{lang === 'en' ? 'Custom model…' : '自定义模型…'}</option>
+      </select>
+      {!isPreset && (
+        <input
+          type="text"
+          value={value}
+          placeholder={lang === 'en' ? 'Enter the exact model ID' : '请输入准确的模型 ID'}
+          onChange={event => onChange(event.target.value)}
+          style={{ width:'100%', marginTop:6 }}
+        />
+      )}
+      <div style={{ fontSize:12, color:'#777', marginTop:4 }}>
+        {lang === 'en' ? 'Choose a preset or enter a provider-supported model ID.' : '请选择预设版本，或填写提供方支持的模型 ID。'}
+      </div>
+    </label>
+  );
+}
 
 function defaultModelForChoice(choice: BotChoice): string {
   return DEFAULT_MODEL_BY_CHOICE[choice] || '';
@@ -3811,6 +3924,7 @@ function choiceLabel(choice: BotChoice): string {
     case 'built-in:endgame-rush': return 'EndgameRush';
     case 'built-in:advanced-hybrid': return 'Advanced Hybrid';
     case 'ai:openai':             return 'OpenAI';
+    case 'ai:claude':             return 'Claude';
     case 'ai:gemini':             return 'Gemini';
     case 'ai:grok':               return 'Grok';
     case 'ai:kimi':               return 'Kimi';
@@ -5240,6 +5354,7 @@ useEffect(() => { allLogsRef.current = allLogs; }, [allLogs]);
         }
         switch (choice) {
           case 'ai:openai':   return { choice, model, apiKey: keys.openai || '' };
+          case 'ai:claude':   return { choice, model, apiKey: keys.claude || '' };
           case 'ai:gemini':   return { choice, model, apiKey: keys.gemini || '' };
           case 'ai:grok':     return { choice, model, apiKey: keys.grok || '' };
           case 'ai:kimi':     return { choice, model, apiKey: keys.kimi || '', baseUrl: readProviderBase(choice, keys) };
@@ -7327,6 +7442,7 @@ function DdzRenderer() {
         label: lang === 'en' ? 'AI / External' : 'AI / 外置',
         options: [
           { value: 'ai:openai', label: 'OpenAI' },
+          { value: 'ai:claude', label: 'Claude' },
           { value: 'ai:gemini', label: 'Gemini' },
           { value: 'ai:grok', label: 'Grok' },
           { value: 'ai:kimi', label: 'Kimi' },
@@ -7360,28 +7476,21 @@ function DdzRenderer() {
       const choice = seats[i];
       const blocks: ReactNode[] = [];
       if (choice.startsWith('ai:')) {
-        const preset = defaultModelForChoice(choice);
         blocks.push(
-          <label key={`model-${i}`} style={{ display: 'block', marginBottom: 6 }}>
-            模型（必填）
-            <input
-              type="text"
+          <div key={`model-${i}`} style={{ marginBottom: 6 }}>
+            <ModelVersionField
+              choice={choice}
               value={seatModels[i]}
-              placeholder={preset ? `默认：${preset}` : '请输入模型名称'}
-              onChange={(e) => {
-                const v = e.target.value;
+              onChange={(v) => {
                 setSeatModels((arr) => {
                   const next = [...arr];
                   next[i] = v;
                   return next;
                 });
               }}
-              style={{ width: '100%' }}
+              lang={lang}
             />
-            <div style={{ fontSize: 12, color: '#777', marginTop: 4 }}>
-              {preset ? `默认使用最新版本：${preset}，可修改。` : '需填写提供方的模型或版本名称。'}
-            </div>
-          </label>,
+          </div>,
         );
       }
       const pushKeyField = (
@@ -7412,6 +7521,7 @@ function DdzRenderer() {
         );
       };
       if (choice === 'ai:openai') blocks.push(pushKeyField('openai', 'OpenAI API Key'));
+      if (choice === 'ai:claude') blocks.push(pushKeyField('claude', 'Anthropic API Key'));
       if (choice === 'ai:gemini') blocks.push(pushKeyField('gemini', 'Gemini API Key'));
       if (choice === 'ai:grok') blocks.push(pushKeyField('grok', 'xAI (Grok) API Key'));
       if (choice === 'ai:kimi') blocks.push(pushKeyField('kimi', 'Kimi API Key'));
@@ -7464,7 +7574,7 @@ function DdzRenderer() {
       }
       return <>{blocks}</>;
     },
-    [seats, seatModels, seatKeys],
+    [seats, seatModels, seatKeys, lang],
   );
   const [totalMatches, setTotalMatches] = useState<number | null>(null);
   const tabKeys = ['core', 'ai', 'interval', 'timeout'] as const;

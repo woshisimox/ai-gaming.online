@@ -13,6 +13,7 @@ import {
   singleDangerPenalty,
 } from '../../lib/doudizhu/engine';
 import { OpenAIBot } from '../../lib/bots/openai_bot';
+import { ClaudeBot } from '../../lib/bots/claude_bot';
 import { GeminiBot } from '../../lib/bots/gemini_bot';
 import { GrokBot } from '../../lib/bots/grok_bot';
 import { HttpBot } from '../../lib/bots/http_bot';
@@ -350,7 +351,7 @@ type BotChoice =
   | 'built-in:ally-support'
   | 'built-in:endgame-rush'
   | 'built-in:advanced-hybrid'
-  | 'ai:openai' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
+  | 'ai:openai' | 'ai:claude' | 'ai:gemini' | 'ai:grok' | 'ai:kimi' | 'ai:qwen' | 'ai:deepseek'
   | 'http'
   | 'human';
 
@@ -387,6 +388,7 @@ function providerLabel(choice: BotChoice) {
     case 'built-in:advanced-hybrid': return 'AdvancedHybrid';
     case 'human': return 'Human';
     case 'ai:openai': return 'OpenAI';
+    case 'ai:claude': return 'Claude';
     case 'ai:gemini': return 'Gemini';
     case 'ai:grok': return 'Grok';
     case 'ai:kimi': return 'Kimi';
@@ -414,6 +416,11 @@ function asBot(choice: BotChoice, spec?: SeatSpec) {
       const model = (spec?.model || '').trim();
       if (!model) throw new Error('OpenAI 模型未配置');
       return OpenAIBot({ apiKey: spec?.apiKey || '', model });
+    }
+    case 'ai:claude': {
+      const model = (spec?.model || '').trim();
+      if (!model) throw new Error('Claude 模型未配置');
+      return ClaudeBot({ apiKey: spec?.apiKey || '', model });
     }
     case 'ai:gemini': {
       const model = (spec?.model || '').trim();

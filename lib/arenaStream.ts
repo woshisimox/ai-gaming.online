@@ -7,6 +7,7 @@ import {
 } from './engine';
 
 import { OpenAIBot } from './bots/openai_bot';
+import { ClaudeBot } from './bots/claude_bot';
 import { GeminiBot } from './bots/gemini_bot';
 import { GrokBot }   from './bots/grok_bot';
 import { KimiBot }   from './bots/kimi_bot';
@@ -29,7 +30,7 @@ const asBot = (fn: IBot, meta?: { choice?: string; phaseAware?: boolean }): IBot
 
 export type BotSpec =
   | { kind: 'builtin'; name: 'greedy-max' | 'greedy-min' | 'random-legal' | 'advanced-hybrid' }
-  | { kind: 'ai'; name: 'openai' | 'gemini' | 'grok' | 'kimi' | 'qwen'; model?: string; apiKey?: string }
+  | { kind: 'ai'; name: 'openai' | 'claude' | 'gemini' | 'grok' | 'kimi' | 'qwen'; model?: string; apiKey?: string }
   | { kind: 'http'; baseUrl: string; token?: string };
 
 export function getBot(spec: BotSpec, seatIdx: number): IBot {
@@ -51,6 +52,9 @@ export function getBot(spec: BotSpec, seatIdx: number): IBot {
     const mark = (name: string, bot: IBot) => asBot(bot, { choice: `ai:${name}`, phaseAware: true });
     if (spec.name === 'openai') {
       return mark('openai', OpenAIBot({ apiKey: spec.apiKey || '', model }));
+    }
+    if (spec.name === 'claude') {
+      return mark('claude', ClaudeBot({ apiKey: spec.apiKey || '', model }));
     }
     if (spec.name === 'gemini') {
       return mark('gemini', GeminiBot({ apiKey: spec.apiKey || '', model }));
