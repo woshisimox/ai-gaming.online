@@ -1663,26 +1663,30 @@ type HandProps = {
   disabled?: boolean;
   faceDown?: boolean;
   compact?: boolean;
+  indexOffset?: number;
 };
 
-function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false, compact = false }: HandProps) {
+function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false, compact = false, indexOffset = 0 }: HandProps) {
   const { t } = useI18n();
   if (!cards || cards.length === 0) return <span style={{ opacity: 0.6 }}>{t('Empty')}</span>;
   const selected = selectedIndices ?? new Set<number>();
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap' }}>
-      {cards.map((c, idx) => (
-        <Card
-          key={`${c}-${idx}`}
-          label={c}
-          interactive={interactive}
-          selected={selected.has(idx)}
-          onClick={interactive && onToggle ? () => onToggle(idx) : undefined}
-          disabled={disabled}
-          hidden={faceDown && !interactive}
-          compact={compact}
-        />
-      ))}
+      {cards.map((c, idx) => {
+        const sourceIndex = indexOffset + idx;
+        return (
+          <Card
+            key={`${c}-${sourceIndex}`}
+            label={c}
+            interactive={interactive}
+            selected={selected.has(sourceIndex)}
+            onClick={interactive && onToggle ? () => onToggle(sourceIndex) : undefined}
+            disabled={disabled}
+            hidden={faceDown && !interactive}
+            compact={compact}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -6706,6 +6710,8 @@ const handleAllSaveInner = () => {
       : landlord === seat
         ? (lang === 'en' ? 'Landlord' : '地主')
         : (lang === 'en' ? (position === 'west' ? 'West' : 'East') : (position === 'west' ? '西座' : '东座'));
+    const seatCards = hands[seat] || [];
+    const farmerRows = isSouth ? [] : [seatCards.slice(0, 9), seatCards.slice(9, 18)].filter(row => row.length > 0);
     return (
       <div className={cx(styles.tableSeat, positionClass)} data-seat={seat} data-position={position}>
         <div className={styles.tableSeatHeader}>
@@ -6719,15 +6725,35 @@ const handleAllSaveInner = () => {
           <div className={styles.tableScore} title={lang === 'en' ? 'Score' : '积分'}>{totals[seat]}</div>
         </div>
         <div className={cx(styles.tableHand, !isSouth && styles.tableFarmerHand, position === 'east' && styles.tableHandReverse)}>
-          <Hand
-            cards={hands[seat]}
-            interactive={seatInteractive}
-            selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
-            onToggle={seatInteractive ? toggleHumanCard : undefined}
-            disabled={humanSubmitting || humanExpired}
-            faceDown={faceDown}
-            compact={!isSouth}
-          />
+          {isSouth ? (
+            <Hand
+              cards={seatCards}
+              interactive={seatInteractive}
+              selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+              onToggle={seatInteractive ? toggleHumanCard : undefined}
+              disabled={humanSubmitting || humanExpired}
+              faceDown={faceDown}
+            />
+          ) : farmerRows.length ? (
+            <div className={styles.tableFarmerRows}>
+              {farmerRows.map((row, rowIndex) => (
+                <div key={rowIndex} className={styles.tableFarmerRow}>
+                  <Hand
+                    cards={row}
+                    interactive={seatInteractive}
+                    selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+                    onToggle={seatInteractive ? toggleHumanCard : undefined}
+                    disabled={humanSubmitting || humanExpired}
+                    faceDown={faceDown}
+                    compact
+                    indexOffset={rowIndex * 9}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className={styles.tableEmptyHand}>{lang === 'en' ? '(empty)' : '（空）'}</span>
+          )}
         </div>
         <div className={styles.tableRemaining}>
           {lang === 'en' ? `${hands[seat]?.length ?? 0} cards left` : `剩余 ${hands[seat]?.length ?? 0} 张`}
@@ -7124,24 +7150,6 @@ const handleAllSaveInner = () => {
           </div>
         </Section>
       )}
-
-      <Section title="出牌">
-        <div style={{ border:'1px dashed #eee', borderRadius:8, padding:'6px 8px' }}>
-          {plays.length === 0
-            ? <div style={{ opacity:0.6 }}>（尚无出牌）</div>
-            : plays.map((p, idx) => (
-              <PlayRow
-                key={idx}
-                seat={p.seat}
-                move={p.move}
-                cards={p.cards}
-                reason={p.reason}
-                showReason={canDisplaySeatReason(p.seat)}
-              />
-            ))
-          }
-        </div>
-      </Section>
 
       <Section title="结果">
         <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:12 }}>
