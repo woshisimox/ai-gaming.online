@@ -39,7 +39,7 @@ const joinCards = (value: string[]) => {
   return value.map((v) => String(v ?? '')).filter(Boolean).join(' ');
 };
 
-const trimSeen = (value: string[], max = 150) => {
+const trimSeen = (value: string[], max = 4096) => {
   if (!Array.isArray(value) || !value.length) return '无';
   const joined = joinCards(value);
   return joined.length > max ? `${joined.slice(0, max)}…` : joined;
@@ -78,11 +78,10 @@ const describeHistoryEntry = (entry: any, mode: PromptMode) => {
   return null;
 };
 
-const formatHistoryLine = (ctx: any, mode: PromptMode, limit = 6) => {
+const formatHistoryLine = (ctx: any, mode: PromptMode) => {
   const history = Array.isArray(ctx?.history) ? ctx.history : [];
   if (!history.length) return mode === 'safe' ? 'History: none' : '历史出牌：无';
-  const recent = history.slice(-limit);
-  const rendered = recent
+  const rendered = history
     .map((entry: any) => describeHistoryEntry(entry, mode))
     .filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0);
   if (!rendered.length) return null;
@@ -123,6 +122,7 @@ export function buildDouPrompts(
   const handsStr = Array.isArray(ctx?.hands) ? joinCards(ctx.hands) : '';
   const seenArr = Array.isArray(ctx?.seen) ? ctx.seen : [];
   const seenBySeat = Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[], [], []];
+  const bottomCards = Array.isArray(ctx?.bottom) ? joinCards(ctx.bottom) : '';
   const seatLineNormal = `座位：我=${ctx?.seat} 地主=${ctx?.landlord} 首家=${ctx?.leader} 轮次=${ctx?.trick}`;
   const seatLineSafe = `Seat info: self=${ctx?.seat} landlord=${ctx?.landlord} lead=${ctx?.leader} turn=${ctx?.trick}`;
   const seatLine = mode === 'safe' ? seatLineSafe : seatLineNormal;
@@ -185,6 +185,7 @@ export function buildDouPrompts(
         'Reply with strict JSON only: {"phase":"double","double":true|false,"reason":"note"}.',
         `Role:${role}`,
         `Hand:${handsStr}`,
+        `Bottom:${bottomCards || 'none'}`,
         'Stay concise and family friendly.'
       ].join('\n');
     }
@@ -193,6 +194,8 @@ export function buildDouPrompts(
         'You are a harmless assistant for the Dou Dizhu card game. Reply with JSON only.',
         '{"phase":"double","double":true|false,"reason":"short note"}',
         `Role: ${role}｜BaseMultiplier: ${base}`,
+        `Hand: ${handsStr}`,
+        `Bottom: ${bottomCards || 'none'}`,
         (role !== 'landlord' ? `Farmer heuristics Δ̂=${dLhat}｜counter=${counter}` : ''),
         (role === 'landlord' && delta ? `Landlord bonus delta≈${delta}` : ''),
         seatLine,
@@ -202,6 +205,8 @@ export function buildDouPrompts(
     return [
       '你是斗地主决策助手，目前阶段是明牌后的加倍决策。必须只输出一个 JSON 对象：{"phase":"double","double":true|false,"reason":"简要说明"}。',
       `角色：${role}｜基础倍数：${base}`,
+      `手牌：${handsStr}`,
+      `底牌：${bottomCards || '无'}`,
       role === 'landlord' && delta ? `地主底牌增益Δ≈${delta}` : '',
       role !== 'landlord' ? `估计Δ̂=${dLhat}｜counter=${counter}` : '',
       '请结合公开信息与手牌，自主判断是否加倍，并给出简要理由。',
@@ -217,8 +222,15 @@ export function buildDouPrompts(
         `Hand:${handsStr}`,
         `Required:${requirement}`,
         `CanPass:${ctx?.canPass ? 'true' : 'false'}`,
+        seatLine,
+        historyLine || undefined,
+        countsLine || undefined,
+        trickLine || undefined,
+        `Bottom:${bottomCards || 'none'}`,
+        `SeenBySeat:S0=${trimSeen(seenBySeat[0] || [])}|S1=${trimSeen(seenBySeat[1] || [])}|S2=${trimSeen(seenBySeat[2] || [])}`,
+        `SeenAll:${trimSeen(seenArr)}`,
         'Keep it family friendly and concise.'
-      ].join('\n');
+      ].filter(Boolean).join('\n');
     }
     const seen0 = trimSeen(seenBySeat[0] || []);
     const seen1 = trimSeen(seenBySeat[1] || []);
@@ -235,6 +247,7 @@ export function buildDouPrompts(
         historyLine || undefined,
         countsLine || undefined,
         trickLine || undefined,
+        `Bottom: ${bottomCards || 'none'}`,
         `SeenBySeat: S0=${seen0} | S1=${seen1} | S2=${seen2}`,
         `SeenAll: ${trimSeen(seenArr)}`,
         'Choose only legal combinations. Reply with strict JSON and stay within the family-friendly context of this card game.'
@@ -252,6 +265,7 @@ export function buildDouPrompts(
       historyLine || undefined,
       countsLine || undefined,
       trickLine || undefined,
+      `底牌：${bottomCards || '无'}`,
       `按座位已出牌：S0=${seen0} | S1=${seen1} | S2=${seen2}`,
       `已出牌：${trimSeen(seenArr)}`,
       '只能出完全合法的牌型；若必须跟牌则给出能压住的最优解。请仅返回严格的 JSON：{"move":"play"|"pass","cards":string[],"reason":string}。'

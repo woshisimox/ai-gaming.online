@@ -33,16 +33,6 @@ function stableHash(s: string): string { let h=5381; for (let i=0;i<s.length;i++
 
 
 
-/* ========== 已出牌缓存（仅当前请求作用域） ========== */
-declare global {
-  var __DDZ_SEEN: string[] | undefined;
-  var __DDZ_SEEN_BY_SEAT: string[][] | undefined;
-
-
-
-}
-(globalThis as any).__DDZ_SEEN ??= [];
-(globalThis as any).__DDZ_SEEN_BY_SEAT ??= [[],[],[]];
 /* ========== 统一打分（与内置算法口径一致） ========== */
 const __SEQ = ['3','4','5','6','7','8','9','T','J','Q','K','A'];
 const __POS: Record<string, number> = Object.fromEntries(__SEQ.map((r,i)=>[r,i])) as any;
@@ -212,10 +202,10 @@ function buildAutoTimeoutMove(ctx: any): BotMove {
 function unifiedScore(ctx:any, mv:string[]): number {
   if (!Array.isArray(mv) || mv.length===0) return -999;
   const BASE:Record<string,number> = Object.fromEntries(__ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as any;
-  const seenAll:string[] = (globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[] = Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen = new Map<string,number>(Object.entries(BASE) as any);
   const sub=(arr:string[])=>{ for(const c of arr){ const r=__rank(c); unseen.set(r, Math.max(0,(unseen.get(r)||0)-1)); } };
-  sub(ctx.hands||[]); sub(seenAll);
+  sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
   const cnt = __count(mv);
   const isRocket = (cnt.get('x')||0)>=1 && (cnt.get('X')||0)>=1 && mv.length===2;
   const isBomb = Array.from(cnt.values()).some(n=>n===4);
@@ -623,7 +613,9 @@ function traceWrap(
     let result:any;
     const t0 = Date.now();
     try {
-      const ctxWithSeen = { ...ctx, seen: (globalThis as any).__DDZ_SEEN ?? [], seenBySeat: (globalThis as any).__DDZ_SEEN_BY_SEAT ?? [[],[],[]] };
+      // The engine owns all per-game public information. Do not replace these
+      // request-local snapshots with process-global caches.
+      const ctxWithSeen = sanitizeCtx(ctx);
       try { console.debug('[CTX]', `seat=${ctxWithSeen.seat}`, `landlord=${ctxWithSeen.landlord}`, `leader=${ctxWithSeen.leader}`, `trick=${ctxWithSeen.trick}`, `seen=${ctxWithSeen.seen?.length||0}`, `seatSeen=${(ctxWithSeen.seenBySeat||[]).map((a:any)=>Array.isArray(a)?a.length:0).join('/')}`); } catch {}
 
       if (isHuman) {
@@ -817,6 +809,7 @@ async function runOneRoundWithGuard(
   const iter = runOneGame({ seats, four2, rule, ruleId } as any);
   let sentInit = false;
   let resultSent = false;
+  let terminalSeat: number | null = null;
 
   // 画像统计
   let landlordIdx: number = -1;
@@ -831,13 +824,6 @@ async function runOneRoundWithGuard(
   const countPlay = (seat:number, move:'play'|'pass', cards?:string[])=>{
     const cc: string[] = Array.isArray(cards) ? cards : [];
     if (move === 'play') {
-      try {
-        const seenA: string[] = (globalThis as any).__DDZ_SEEN ?? ((globalThis as any).__DDZ_SEEN = []);
-        const bySeat: string[][] = (globalThis as any).__DDZ_SEEN_BY_SEAT ?? ((globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]]);
-        seenA.push(...cc);
-        if (bySeat[seat]) bySeat[seat].push(...cc);
-      } catch {}
-
       stats[seat].plays++;
       stats[seat].cardsPlayed += cc.length;
       const isRocket = cc.length === 2 && cc.includes('x') && cc.includes('X');
@@ -865,8 +851,6 @@ for await (const ev of (iter as any)) {
         bottom: ev.bottom,
         hands: ev.hands
       });
-      (globalThis as any).__DDZ_SEEN.length = 0;
-      (globalThis as any).__DDZ_SEEN_BY_SEAT = [[],[],[]];
       // —— 明牌后额外加倍阶段：从地主开始依次决定是否加倍 ——
 if (landlordIdx >= 0) try {
   const __rank = (c:string)=>(c==='x'||c==='X')?c:c.slice(-1);
@@ -985,8 +969,16 @@ continue;
     }
     if (ev?.type==='event' && ev?.kind==='play') {
       const { seat, move, cards } = ev;
+      if (terminalSeat !== null) {
+        // A player has already emptied their hand. Never expose any later play
+        // event even if an upstream implementation accidentally keeps running.
+        continue;
+      }
       countPlay(seat, move, cards);
       writeLine(res, ev);
+      if (move === 'play' && Array.isArray(ev.hand) && ev.hand.length === 0) {
+        terminalSeat = seat;
+      }
       continue;
     }
 
@@ -998,6 +990,9 @@ continue;
 
     if (isResultLike) {
       if (!resultSent) {
+        const resultEvent = terminalSeat !== null
+          ? { ...(ev || {}), winner: terminalSeat }
+          : ev;
         // —— 在 result 之前产出画像（前端会立即累计，避免兜底 2.5）——
         const perSeat = [0,1,2].map((i)=>{
           const s = stats[i];
@@ -1008,7 +1003,7 @@ continue;
           const agg   = clamp(1.5*s.bombs + 2.0*s.rockets + (1-passRate)*3 + Math.min(4, avgCards)*0.25);
           const cons  = clamp(3 + passRate*2 - (s.bombs + s.rockets)*0.6);
           let   eff   = clamp(2 + avgCards*0.6 - passRate*1.5);
-          if ((ev as any).winner === i) eff = clamp(eff + 0.8);
+          if ((resultEvent as any).winner === i) eff = clamp(eff + 0.8);
           const coop  = clamp((i===landlordIdx ? 2.0 : 2.5) + passRate*2.5 - (s.bombs + s.rockets)*0.4);
           const rob   = clamp((i===landlordIdx ? 3.5 : 2.0) + 0.3*s.bombs + 0.6*s.rockets - passRate);
 
@@ -1026,7 +1021,7 @@ continue;
         writeLine(res, { type:'event', kind:'stats', perSeat });
 
         // 再写 result（展开 & 带 lastReason）
-        const baseResult = (ev?.type==='result') ? ev : { type:'result', ...(ev||{}) };
+        const baseResult = (resultEvent?.type==='result') ? resultEvent : { type:'result', ...(resultEvent||{}) };
         writeLine(res, { ...(baseResult||{}), lastReason: [...lastReason] });
       }
       resultSent = true;

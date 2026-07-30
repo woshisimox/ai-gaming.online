@@ -1331,8 +1331,9 @@ function remainingCountByRank(seen: Label[], hand: Label[]): Record<string, numb
       total[rk] = (total[rk] || 0) - 1;
     }
   };
-  subtract(seen);
-  subtract(hand);
+  // A landlord's three bottom cards are both public (`seen`) and still in
+  // their hand. Count physical cards once when estimating unknown cards.
+  subtract(Array.from(new Set([...seen, ...hand])));
   for (const r of RANKS) if (!(r in total)) total[r] = 0;
   return total;
 }
@@ -1565,7 +1566,7 @@ export function classify(cards: Label[], four2: Four2Policy = 'both'): Combo | n
 }
 
 // 比较：b 是否能压过 a
-function beats(a: Combo, b: Combo): boolean {
+export function beats(a: Combo, b: Combo): boolean {
   if (b.type === 'rocket') return true;
   if (a.type === 'rocket') return false;
 
@@ -1961,6 +1962,27 @@ function* planeCoreFrom(map: Map<number, Label[]>) {
   }
 }
 
+function combinations<T>(items: T[], size: number): T[][] {
+  if (size < 0 || size > items.length) return [];
+  if (size === 0) return [[]];
+  const out: T[][] = [];
+  const pick: T[] = [];
+  const visit = (start: number) => {
+    if (pick.length === size) {
+      out.push(pick.slice());
+      return;
+    }
+    const need = size - pick.length;
+    for (let i = start; i <= items.length - need; i++) {
+      pick.push(items[i]);
+      visit(i + 1);
+      pick.pop();
+    }
+  };
+  visit(0);
+  return out;
+}
+
 function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
   const map = countByRank(hand);
   const res: Label[][] = [];
@@ -1982,13 +2004,11 @@ function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
     for (const s of singlesFrom(map)) {
       if (used.has(s[0])) continue;
       res.push([...t, ...s]);
-      break; // 控制枚举规模：每个三张只取一个带法
     }
     // 带一对
     for (const p of pairsFrom(map)) {
       if (p.some(x => used.has(x))) continue;
       res.push([...t, ...p]);
-      break;
     }
   }
 
@@ -2010,11 +2030,15 @@ function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
     // 带单
     const singles: Label[] = [];
     for (const [rv, arr] of cnt) for (const c of arr) singles.push(c);
-    if (singles.length >= group) res.push([...core, ...singles.slice(0, group)]);
+    for (const wings of combinations(singles, group)) {
+      res.push([...core, ...wings]);
+    }
     // 带对
     const pairs: Label[][] = [];
     for (const [rv, arr] of cnt) if (arr.length >= 2) pairs.push([arr[0], arr[1]]);
-    if (pairs.length >= group) res.push([...core, ...pairs.slice(0, group).flat()]);
+    for (const wings of combinations(pairs, group)) {
+      res.push([...core, ...wings.flat()]);
+    }
   }
 
   // 四带二
@@ -2022,19 +2046,25 @@ function generateAllMoves(hand: Label[], four2: Four2Policy): Label[][] {
     if (four2 === 'both' || four2 === '2singles') {
       const pool: Label[] = [];
       for (const [r2, a2] of map) if (r2 !== rv) for (const c of a2) pool.push(c);
-      if (pool.length >= 2) res.push([...arr, ...pool.slice(0,2)]);
+      for (const wings of combinations(pool, 2)) {
+        res.push([...arr, ...wings]);
+      }
     }
     if (four2 === 'both' || four2 === '2pairs') {
       const pairs: Label[][] = [];
       for (const [r2,a2] of map) if (r2 !== rv && a2.length >= 2) pairs.push([a2[0],a2[1]]);
-      if (pairs.length >= 2) res.push([...arr, ...pairs[0], ...pairs[1]]);
+      for (const wings of combinations(pairs, 2)) {
+        res.push([...arr, ...wings.flat()]);
+      }
     }
   }
 
   // 去重/排序
   const key = (xs:Label[]) => xs.slice().sort().join('|');
   const uniq = new Map<string, Label[]>();
-  for (const m of res) uniq.set(key(m), m);
+  for (const m of res) {
+    if (classify(m, four2)) uniq.set(key(m), m);
+  }
   return [...uniq.values()].sort((A,B) => {
     const ca = classify(A, four2)!, cb = classify(B, four2)!;
     if (ca.type === cb.type) return (ca.rank - cb.rank);
@@ -2085,9 +2115,9 @@ export const RandomLegal: BotFunc = (ctx) => {
 
   // —— 未现牌估计（结合已出牌与手牌）
   const BASE:Record<string,number>=Object.fromEntries(ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as Record<string,number>;
-  const seenAll:string[]=(globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen=new Map<string,number>(Object.entries(BASE));
-  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(ctx.hands); sub(seenAll);
+  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
 
   const baseOvertakeRisk=(mv:string[])=>{const cls=classify(mv,four2)! as any;
     if(isType(cls.type,'rocket'))return 0;
@@ -2146,7 +2176,7 @@ export const RandomLegal: BotFunc = (ctx) => {
     const pool = same.length ? same : legal;          // 优先同型同长度
     const choice = pickWeighted(pool);
     const t=(classify(choice,four2) as any)?.type; const key=keyRankOfMove(choice);
-    const all:string[]=(globalThis as any).__DDZ_SEEN ?? []; const lens=((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+    const all:string[]=Array.isArray(ctx?.seen) ? ctx.seen : []; const lens=(Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
     const sc = scoreMove(choice);
     const reason = ['RandomLegal', `seat=${ctx.seat} landlord=${ctx.landlord}`, `seen=${all.length} seatSeen=${lens}`, `follow`, `type=${t} key=${key}`, `score=${sc.toFixed(2)}`].join(' | ');
     return { move:'play', cards: choice, reason };
@@ -2158,7 +2188,7 @@ export const RandomLegal: BotFunc = (ctx) => {
     const pool = nonBombs.length ? nonBombs : legal;
     const choice = pickWeighted(pool);
     const t=(classify(choice,four2) as any)?.type; const key=keyRankOfMove(choice);
-    const all:string[]=(globalThis as any).__DDZ_SEEN ?? []; const lens=((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+    const all:string[]=Array.isArray(ctx?.seen) ? ctx.seen : []; const lens=(Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
     const sc = scoreMove(choice);
     const reason = ['RandomLegal', `seat=${ctx.seat} landlord=${ctx.landlord}`, `seen=${all.length} seatSeen=${lens}`, `lead`, `type=${t} key=${key}`, `score=${sc.toFixed(2)}`].join(' | ');
     return { move:'play', cards: choice, reason };
@@ -2198,10 +2228,10 @@ export const GreedyMin: BotFunc = (ctx) => {
     let best='3',bp=-1;for(const r of Object.keys(cnt)){const p=POSALL[r]??-1;if(p>bp){best=r;bp=p;}}return best;};
 
   const BASE:Record<string,number>=Object.fromEntries(ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as Record<string,number>;
-  const seenAll:string[]=(globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen=new Map<string,number>(Object.entries(BASE));
   const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}};
-  sub(ctx.hands); sub(seenAll);
+  sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
 
   const baseOvertakeRisk=(mv:string[])=>{const cls=classify(mv,four2)! as any;
     if(isType(cls.type,'rocket'))return 0;
@@ -2251,8 +2281,8 @@ export const GreedyMin: BotFunc = (ctx) => {
     for (const mv of pool){ const sc=scoreMove(mv); if (sc>bestScore){bestScore=sc; best=mv;} }
 
     // reason
-    const all: string[] = Array.isArray((globalThis as any).__DDZ_SEEN) ? (globalThis as any).__DDZ_SEEN : [];
-    const lens = ((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+    const all: string[] = Array.isArray(ctx?.seen) ? ctx.seen : [];
+    const lens = (Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
     const t=(classify(best,four2) as any)?.type; const key=keyRankOfMove(best);
     const reason = ['GreedyMin', `seat=${ctx.seat} landlord=${ctx.landlord}`, `seen=${all.length} seatSeen=${lens}`, `type=${t} key=${key}`, `score=${bestScore.toFixed(2)}`].join(' | ');
 
@@ -2348,10 +2378,10 @@ export const GreedyMax: BotFunc = (ctx) => {
     let best='3',bp=-1;for(const r of Object.keys(cnt)){const p=POSALL[r]??-1;if(p>bp){best=r;bp=p;}}return best;};
 
   const BASE:Record<string,number>=Object.fromEntries(ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as Record<string,number>;
-  const seenAll:string[]=(globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen=new Map<string,number>(Object.entries(BASE));
   const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}};
-  sub(ctx.hands); sub(seenAll);
+  sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
 
   const baseOvertakeRisk=(mv:string[])=>{const cls=classify(mv,four2)! as any;
     if(isType(cls.type,'rocket'))return 0;
@@ -2401,8 +2431,8 @@ export const GreedyMax: BotFunc = (ctx) => {
     for (const mv of pool){ const sc=scoreMove(mv); if (sc>bestScore){bestScore=sc; best=mv;} }
 
     // reason
-    const all: string[] = Array.isArray((globalThis as any).__DDZ_SEEN) ? (globalThis as any).__DDZ_SEEN : [];
-    const lens = ((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+    const all: string[] = Array.isArray(ctx?.seen) ? ctx.seen : [];
+    const lens = (Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
     const t=(classify(best,four2) as any)?.type; const key=keyRankOfMove(best);
     const reason = ['GreedyMax', `seat=${ctx.seat} landlord=${ctx.landlord}`, `seen=${all.length} seatSeen=${lens}`, `type=${t} key=${key}`, `score=${bestScore.toFixed(2)}`].join(' | ');
 
@@ -2440,9 +2470,9 @@ export const AllySupport: BotFunc = (ctx) => {
 
   // —— 未现牌估计
   const BASE:Record<string,number>=Object.fromEntries(ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as Record<string,number>;
-  const seenAll:string[]=(globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen=new Map<string,number>(Object.entries(BASE));
-  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(ctx.hands); sub(seenAll);
+  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
 
   const baseOvertakeRisk=(mv:string[])=>{const cls=classify(mv,four2)! as any;
     if(isType(cls.type,'rocket'))return 0;
@@ -2484,8 +2514,8 @@ export const AllySupport: BotFunc = (ctx) => {
   };
 
   // ========= 决策 =========
-  const all:string[]=(globalThis as any).__DDZ_SEEN ?? [];
-  const lens=((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+  const all:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
+  const lens=(Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
 
   if (ctx.require) {
     if (!legal.length) return ctx.canPass ? { move:'pass', reason:'AllySupport: 需跟无可接' } : { move:'play', cards:[ctx.hands[0] ?? '♠3'], reason:'AllySupport: 需跟无可接且不许过' };
@@ -2599,9 +2629,9 @@ export const EndgameRush: BotFunc = (ctx) => {
 
   // —— 未现牌估计
   const BASE:Record<string,number>=Object.fromEntries(ORDER.map(r=>[r,(r==='x'||r==='X')?1:4])) as Record<string,number>;
-  const seenAll:string[]=(globalThis as any).__DDZ_SEEN ?? [];
+  const seenAll:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
   const unseen=new Map<string,number>(Object.entries(BASE));
-  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(ctx.hands); sub(seenAll);
+  const sub=(arr:string[])=>{for(const c of arr){const r=rankOfLocal(c);unseen.set(r,Math.max(0,(unseen.get(r)||0)-1));}}; sub(Array.from(new Set([...(ctx.hands || []), ...seenAll])));
 
   const baseOvertakeRisk=(mv:string[])=>{const cls=classify(mv,four2)! as any;
     if(isType(cls.type,'rocket'))return 0;
@@ -2650,8 +2680,8 @@ export const EndgameRush: BotFunc = (ctx) => {
   };
 
   // ========= 决策 =========
-  const all:string[]=(globalThis as any).__DDZ_SEEN ?? [];
-  const lens=((globalThis as any).__DDZ_SEEN_BY_SEAT || [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
+  const all:string[]=Array.isArray(ctx?.seen) ? ctx.seen : [];
+  const lens=(Array.isArray(ctx?.seenBySeat) ? ctx.seenBySeat : [[],[],[]]).map((a:any)=>Array.isArray(a)?a.length:0).join('/');
 
   if (ctx.require) {
     if (!legal.length) return ctx.canPass ? { move:'pass', reason:'EndgameRush: 需跟无可接' } : { move:'play', cards:[ctx.hands[0] ?? '♠3'], reason:'EndgameRush: 需跟无可接且不许过' };
@@ -3358,16 +3388,13 @@ try { yield { type:'event', kind:'double-summary', landlord:Lseat, yi:Yseat, bin
   while (true) {
     const isLeader = (require == null && turn === leader);
     
-// --- derive per-seat seen cards (history + bottom to landlord) ---
-function __computeSeenBySeat(history: PlayEvent[], bottom: Label[], landlord: number): Label[][] {
+// --- derive per-seat played cards; public bottom cards stay in ctx.bottom ---
+function __computeSeenBySeat(history: PlayEvent[]): Label[][] {
   const arr: Label[][] = [[],[],[]];
   for (const ev of history) {
     if (ev && ev.move === 'play' && Array.isArray(ev.cards)) {
       try { arr[ev.seat]?.push(...(ev.cards as Label[])); } catch {}
     }
-  }
-  if (typeof landlord === 'number' && landlord >= 0) {
-    try { arr[landlord]?.push(...(bottom as Label[])); } catch {}
   }
   return arr;
 }
@@ -3387,7 +3414,7 @@ function __computeSeenBySeat(history: PlayEvent[], bottom: Label[], landlord: nu
       currentTrick: clone(history.filter(h => h.trick === trick)),
       seen: clone(seen),
       bottom: clone(bottom),
-      seenBySeat: __computeSeenBySeat(history, bottom, landlord),
+      seenBySeat: __computeSeenBySeat(history),
       handsCount: handsCount(),
       role: (turn === landlord ? 'landlord' : 'farmer'),
       teammates: (turn === landlord ? [] : [ (turn=== (landlord+1)%3 ? (landlord+2)%3 : (landlord+1)%3 ) ]),
@@ -3560,7 +3587,9 @@ function __computeSeenBySeat(history: PlayEvent[], bottom: Label[], landlord: nu
 
       yield {
         type:'event', kind:'play', seat: turn, move:'play',
-        cards: pick, comboType: cc.type
+        cards: pick, comboType: cc.type,
+        hand: clone(hands[turn]),
+        terminal: hands[turn].length === 0,
       };
       history.push({ seat: turn, move:'play', cards: clone(pick), comboType: cc.type, trick });
       seen.push(...pick);

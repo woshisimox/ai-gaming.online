@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test:ddz": "node scripts/test-ddz-rules.cjs",
     "start": "next start",
     "lint": "echo \"(lint disabled)\""
   },

@@ -1,6 +1,6 @@
 import type { GameEngine, GameState } from '../../core/types';
 import type { Combo, Four2Policy, Label } from '../../lib/doudizhu/engine';
-import { classify, evalRobScore, generateMoves } from '../../lib/doudizhu/engine';
+import { beats, classify, evalRobScore, generateMoves } from '../../lib/doudizhu/engine';
 import config from './config.json';
 
 const FOUR2_POLICY: Four2Policy = 'both';
@@ -205,22 +205,26 @@ export const ddzEngine: GameEngine<DdzState, DdzAction> = {
     let status: DdzState['status'] = 'running';
 
     if (action.type === 'pass') {
-      data.history.push({ seat: currentSeat, type: 'pass' });
       if (data.require === null || data.lastPlay?.seat === currentSeat) {
+        throw new Error('Cannot pass when leading a Dou Dizhu trick.');
+      }
+      data.history.push({ seat: currentSeat, type: 'pass' });
+      data.passesInRow += 1;
+      if (data.passesInRow >= ddzEngine.maxPlayers - 1 && data.lastPlay) {
+        nextSeat = data.lastPlay.seat;
+        data.require = null;
+        data.lastPlay = null;
         data.passesInRow = 0;
-      } else {
-        data.passesInRow += 1;
-        if (data.passesInRow >= ddzEngine.maxPlayers - 1 && data.lastPlay) {
-          nextSeat = data.lastPlay.seat;
-          data.require = null;
-          data.lastPlay = null;
-          data.passesInRow = 0;
-        }
       }
     } else {
       const combo = classify(action.cards, FOUR2_POLICY);
       if (!combo) {
         throw new Error('Invalid combo for Dou Dizhu action.');
+      }
+      if (data.require !== null) {
+        if (!beats(data.require, combo)) {
+          throw new Error('Play does not beat the current Dou Dizhu requirement.');
+        }
       }
 
       data.hands[currentSeat] = removeCards(data.hands[currentSeat], action.cards);
