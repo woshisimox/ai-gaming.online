@@ -3814,46 +3814,55 @@ function normalizeModelForProvider(choice: BotChoice, input: string): string {
 }
 
 const DEFAULT_MODEL_BY_CHOICE: Partial<Record<BotChoice, string>> = {
-  'ai:openai': 'gpt-4o-mini',
-  'ai:claude': 'claude-sonnet-4-20250514',
-  'ai:gemini': 'gemini-1.5-flash',
-  'ai:grok': 'grok-2-latest',
-  'ai:kimi': 'kimi-k2-0905-preview',
-  'ai:qwen': 'qwen-plus',
-  'ai:deepseek': 'deepseek-chat',
+  'ai:openai': 'gpt-5.2',
+  'ai:claude': 'claude-fable-5',
+  'ai:gemini': 'gemini-3.6-flash',
+  'ai:grok': 'grok-4.5',
+  'ai:kimi': 'kimi-k2.5',
+  'ai:qwen': 'qwen3.7-max',
+  'ai:deepseek': 'deepseek-v4-pro',
 };
 
 const MODEL_OPTIONS_BY_CHOICE: Partial<Record<BotChoice, { value: string; label: string }[]>> = {
   'ai:openai': [
+    { value: 'gpt-5.2', label: 'GPT-5.2（最新）' },
+    { value: 'gpt-5.1', label: 'GPT-5.1' },
+    { value: 'gpt-5-mini', label: 'GPT-5 mini' },
     { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
     { value: 'gpt-4o', label: 'GPT-4o' },
-    { value: 'o3-mini', label: 'o3-mini' },
   ],
   'ai:claude': [
-    { value: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { value: 'claude-opus-4-1-20250805', label: 'Claude Opus 4.1' },
-    { value: 'claude-3-5-haiku-20241022', label: 'Claude 3.5 Haiku' },
+    { value: 'claude-fable-5', label: 'Claude Fable 5（最新）' },
+    { value: 'claude-opus-5', label: 'Claude Opus 5' },
+    { value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   ],
   'ai:gemini': [
-    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash（最新稳定版）' },
+    { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+    { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
+    { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
   ],
   'ai:grok': [
-    { value: 'grok-2-latest', label: 'Grok 2 (latest)' },
-    { value: 'grok-2-mini', label: 'Grok 2 mini' },
+    { value: 'grok-4.5', label: 'Grok 4.5（最新）' },
+    { value: 'grok-4.3', label: 'Grok 4.3' },
+    { value: 'grok-4.20-reasoning', label: 'Grok 4.20 Reasoning' },
   ],
   'ai:kimi': [
+    { value: 'kimi-k2.5', label: 'Kimi K2.5（最新）' },
+    { value: 'kimi-k2-thinking', label: 'Kimi K2 Thinking' },
     { value: 'kimi-k2-0905-preview', label: 'Kimi K2 0905 Preview' },
     { value: 'moonshot-v1-32k', label: 'Moonshot v1 32K' },
   ],
   'ai:qwen': [
-    { value: 'qwen-plus', label: 'Qwen Plus' },
-    { value: 'qwen-max', label: 'Qwen Max' },
-    { value: 'qwen-turbo', label: 'Qwen Turbo' },
+    { value: 'qwen3.7-max', label: 'Qwen 3.7 Max（最新稳定版）' },
+    { value: 'qwen3.6-plus', label: 'Qwen 3.6 Plus' },
+    { value: 'qwen3.6-flash', label: 'Qwen 3.6 Flash' },
+    { value: 'qwen3.8-max-preview', label: 'Qwen 3.8 Max Preview（Token Plan）' },
   ],
   'ai:deepseek': [
-    { value: 'deepseek-chat', label: 'DeepSeek Chat' },
-    { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
+    { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro（最新）' },
+    { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   ],
 };
 

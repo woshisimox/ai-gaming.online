@@ -47,7 +47,7 @@ export const OpenAIBot = (o: { apiKey: string; model?: string }): BotFunc =>
         headers: { 'content-type': 'application/json', authorization: `Bearer ${o.apiKey}` },
         body: JSON.stringify({
           model,
-          temperature: 0.2,
+          ...(/^gpt-5(?:\.|$|-)/i.test(model) ? {} : { temperature: 0.2 }),
           messages
         })
       });
