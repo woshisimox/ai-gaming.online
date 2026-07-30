@@ -1057,6 +1057,18 @@ const normalizeRankToken = (token: string): string => {
 type SuitUsageOwner = string;
 type RankSuitUsage = Map<string, Map<string, SuitUsageOwner>>;
 const seatName = (i:number)=>['甲','乙','丙'][i] || String(i);
+type TablePosition = 'south' | 'west' | 'east';
+type TableSeatMap = Record<TablePosition, number>;
+
+const tableSeatMap = (landlord: number | null): TableSeatMap => {
+  const south = typeof landlord === 'number' && landlord >= 0 && landlord < 3 ? landlord : 0;
+  return {
+    south,
+    west: (south + 1) % 3,
+    east: (south + 2) % 3,
+  };
+};
+
 type BottomInfo = {
   landlord: number | null;
   cards: { label: string; used: boolean }[];
@@ -1650,9 +1662,10 @@ type HandProps = {
   onToggle?: (index: number) => void;
   disabled?: boolean;
   faceDown?: boolean;
+  compact?: boolean;
 };
 
-function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false }: HandProps) {
+function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled = false, faceDown = false, compact = false }: HandProps) {
   const { t } = useI18n();
   if (!cards || cards.length === 0) return <span style={{ opacity: 0.6 }}>{t('Empty')}</span>;
   const selected = selectedIndices ?? new Set<number>();
@@ -1667,6 +1680,7 @@ function Hand({ cards, interactive = false, selectedIndices, onToggle, disabled 
           onClick={interactive && onToggle ? () => onToggle(idx) : undefined}
           disabled={disabled}
           hidden={faceDown && !interactive}
+          compact={compact}
         />
       ))}
     </div>
@@ -6669,6 +6683,59 @@ const handleAllSaveInner = () => {
     };
   }, []);
 
+  const visualSeats = tableSeatMap(landlord);
+  const recentTablePlays = plays.slice(-3);
+  const renderTableSeat = (seat: number, position: TablePosition) => {
+    const isSouth = position === 'south';
+    const isHumanTurn = !!(humanRequest && humanRequest.seat === seat && humanRequest.phase === 'play');
+    const seatInteractive = isHumanTurn && !humanExpired;
+    const revealActive = handRevealRef.current[seat] > Date.now();
+    const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(seat) : false);
+    const positionClass = position === 'south'
+      ? styles.tableSeatSouth
+      : position === 'west'
+        ? styles.tableSeatWest
+        : styles.tableSeatEast;
+    const roleFull = landlord == null
+      ? (lang === 'en' ? `Role pending · ${isSouth ? 'South' : position === 'west' ? 'West' : 'East'}` : `角色待定 · ${isSouth ? '南座' : position === 'west' ? '西座' : '东座'}`)
+      : landlord === seat
+        ? (lang === 'en' ? 'Landlord · South' : '地主 · 南座')
+        : (lang === 'en' ? `Farmer · ${position === 'west' ? 'West' : 'East'}` : `农民 · ${position === 'west' ? '西座' : '东座'}`);
+    const roleShort = landlord == null
+      ? (lang === 'en' ? 'Pending' : '待定')
+      : landlord === seat
+        ? (lang === 'en' ? 'Landlord' : '地主')
+        : (lang === 'en' ? (position === 'west' ? 'West' : 'East') : (position === 'west' ? '西座' : '东座'));
+    return (
+      <div className={cx(styles.tableSeat, positionClass)} data-seat={seat} data-position={position}>
+        <div className={styles.tableSeatHeader}>
+          <div className={styles.tableSeatIdentity}>
+            <SeatTitle i={seat} landlord={landlord === seat} align={isSouth ? 'center' : position === 'west' ? 'flex-start' : 'flex-end'} />
+            <span className={cx(styles.tableRoleChip, landlord === seat ? styles.tableRoleLandlord : styles.tableRoleFarmer)}>
+              <span className={styles.tableRoleFull}>{roleFull}</span>
+              <span className={styles.tableRoleShort}>{roleShort}</span>
+            </span>
+          </div>
+          <div className={styles.tableScore} title={lang === 'en' ? 'Score' : '积分'}>{totals[seat]}</div>
+        </div>
+        <div className={cx(styles.tableHand, !isSouth && styles.tableFarmerHand, position === 'east' && styles.tableHandReverse)}>
+          <Hand
+            cards={hands[seat]}
+            interactive={seatInteractive}
+            selectedIndices={humanRequest && humanRequest.seat === seat ? humanSelectedSet : undefined}
+            onToggle={seatInteractive ? toggleHumanCard : undefined}
+            disabled={humanSubmitting || humanExpired}
+            faceDown={faceDown}
+            compact={!isSouth}
+          />
+        </div>
+        <div className={styles.tableRemaining}>
+          {lang === 'en' ? `${hands[seat]?.length ?? 0} cards left` : `剩余 ${hands[seat]?.length ?? 0} 张`}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <SeatInfoContext.Provider value={seatDisplayNames}>
       <div>
@@ -6847,95 +6914,51 @@ const handleAllSaveInner = () => {
         );
       })()}
 
-      <Section title="手牌">
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-          {[0,1,2].map(i => {
-            const isHumanTurn = !!(humanRequest && humanRequest.seat === i && humanRequest.phase === 'play');
-            const seatInteractive = isHumanTurn && !humanExpired;
-            const revealActive = handRevealRef.current[i] > Date.now();
-            const faceDown = revealActive ? false : (hasHumanSeat ? !isHumanSeat(i) : false);
-            return (
-              <div key={i} style={{ border:'1px solid #eee', borderRadius:8, padding:8, position:'relative' }}>
-                <div
-                  style={{
-                    position:'absolute',
-                    top:8,
-                    right:8,
-                    fontSize:16,
-                    fontWeight:800,
-                    background:'#fff',
-                    border:'1px solid #eee',
-                    borderRadius:6,
-                    padding:'2px 6px',
-                  }}
-                >
-                  {totals[i]}
-                </div>
-                <div style={{ marginBottom:6 }}>
-                  <SeatTitle i={i} landlord={landlord === i} />
-                </div>
-                <Hand
-                  cards={hands[i]}
-                  interactive={seatInteractive}
-                  selectedIndices={humanRequest && humanRequest.seat === i ? humanSelectedSet : undefined}
-                  onToggle={seatInteractive ? toggleHumanCard : undefined}
-                  disabled={humanSubmitting || humanExpired}
-                  faceDown={faceDown}
-                />
+      <Section title={lang === 'en' ? 'Table' : '牌桌'}>
+        <div className={styles.tableFrame}>
+          <div className={styles.tableRail}>
+            <div className={styles.tableFelt}>
+              <div className={styles.tableBrand}>
+                <span>AI GAMING</span>
+                <small>{lang === 'en' ? 'Dou Dizhu Table' : '斗地主牌桌'}</small>
               </div>
-            );
-          })}
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8, marginTop:8 }}>
-          {[0,1,2].map(i=>{
-            const isRevealed = !!bottomInfo.revealed;
-            const isLandlord = bottomInfo.landlord === i;
-            const showCards = isRevealed && isLandlord;
-            const cards = showCards ? bottomInfo.cards : [];
-            const labelText = lang === 'en'
-              ? (isRevealed ? 'Bottom' : 'Bottom (awaiting reveal)')
-              : (isRevealed ? '底牌' : '底牌（待明牌）');
-            const background = isRevealed
-              ? (isLandlord ? '#f0fdf4' : '#f9fafb')
-              : '#f9fafb';
-            return (
-              <div
-                key={`bottom-${i}`}
-                style={{
-                  border:'1px dashed #d1d5db',
-                  borderRadius:8,
-                  padding:'6px 8px',
-                  minHeight:64,
-                  display:'flex',
-                  flexDirection:'column',
-                  justifyContent:'center',
-                  alignItems:'center',
-                  background
-                }}
-              >
-                <div style={{ fontSize:12, color:'#6b7280', marginBottom:4 }}>{labelText}</div>
-                {showCards ? (
-                  cards.length ? (
-                    <div style={{ display:'flex', flexWrap:'wrap', gap:4, justifyContent:'center' }}>
-                      {cards.map((c, idx) => (
-                        <Card key={`${c.label}-${idx}`} label={c.label} dimmed={c.used} compact />
+              {renderTableSeat(visualSeats.west, 'west')}
+              {renderTableSeat(visualSeats.east, 'east')}
+              {renderTableSeat(visualSeats.south, 'south')}
+
+              <div className={styles.tableCenter}>
+                <div className={styles.tableBottom}>
+                  <div className={styles.tableCenterLabel}>{lang === 'en' ? 'Bottom cards' : '底牌'}</div>
+                  {bottomInfo.revealed && bottomInfo.cards.length ? (
+                    <div className={styles.tableBottomCards}>
+                      {bottomInfo.cards.map((card, idx) => (
+                        <Card key={`${card.label}-${idx}`} label={card.label} dimmed={card.used} compact />
                       ))}
                     </div>
                   ) : (
-                    <div style={{ fontSize:12, color:'#9ca3af' }}>
-                      {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
+                    <div className={styles.tableAwaiting}>{lang === 'en' ? 'Awaiting reveal' : '等待明牌'}</div>
+                  )}
+                </div>
+                <div className={styles.tableTrick}>
+                  <div className={styles.tableCenterLabel}>{lang === 'en' ? 'Current trick' : '本轮出牌'}</div>
+                  {recentTablePlays.length === 0 ? (
+                    <div className={styles.tableAwaiting}>{lang === 'en' ? 'Waiting for the first play' : '等待首轮出牌'}</div>
+                  ) : (
+                    <div className={styles.tableTrickRows}>
+                      {recentTablePlays.map((play, idx) => (
+                        <div key={`${play.seat}-${idx}`} className={styles.tableTrickRow}>
+                          <span>{seatName(play.seat)}</span>
+                          {play.move === 'pass'
+                            ? <em>{lang === 'en' ? 'Pass' : '过'}</em>
+                            : <div className={styles.tablePlayedCards}><Hand cards={play.cards || []} compact /></div>}
+                        </div>
+                      ))}
                     </div>
-                  )
-                ) : isRevealed ? (
-                  <div style={{ fontSize:12, color:'#d1d5db' }}>—</div>
-                ) : (
-                  <div style={{ fontSize:12, color:'#9ca3af' }}>
-                    {lang === 'en' ? '(awaiting reveal)' : '（待明牌）'}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            );
-          })}
+            </div>
+          </div>
         </div>
       </Section>
 

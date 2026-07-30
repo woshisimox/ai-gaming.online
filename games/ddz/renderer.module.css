@@ -300,6 +300,443 @@
   color: #0f172a;
 }
 
+.tableFrame {
+  --felt-deep: #073d2b;
+  --felt: #0b5a3e;
+  --felt-light: #147452;
+  --rail-dark: #4a2811;
+  --rail-light: #a76a2a;
+  position: relative;
+  width: 100%;
+  padding: 10px;
+  overflow: hidden;
+  border-radius: 38px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22), transparent 24%),
+    linear-gradient(145deg, var(--rail-light), var(--rail-dark) 58%, #2b160b);
+  box-shadow:
+    0 22px 48px rgba(29, 18, 8, 0.28),
+    inset 0 1px 0 rgba(255, 232, 184, 0.5);
+}
+
+.tableRail {
+  padding: 7px;
+  border: 1px solid rgba(244, 205, 127, 0.65);
+  border-radius: 32px;
+  background: linear-gradient(145deg, #d0a04c, #74501d 55%, #d5a954);
+  box-shadow:
+    inset 0 0 0 2px rgba(57, 28, 9, 0.48),
+    inset 0 0 18px rgba(37, 19, 8, 0.5);
+}
+
+.tableFelt {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(250px, 1.15fr) minmax(180px, 1fr);
+  grid-template-rows: minmax(180px, auto) minmax(190px, auto);
+  gap: 12px 18px;
+  min-height: 470px;
+  padding: 34px 38px 24px;
+  overflow: hidden;
+  border: 2px solid rgba(4, 47, 34, 0.88);
+  border-radius: 46% / 18%;
+  color: #f7f3df;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(35, 143, 98, 0.42), transparent 32%),
+    repeating-linear-gradient(115deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 5px),
+    linear-gradient(145deg, var(--felt-light), var(--felt) 42%, var(--felt-deep));
+  box-shadow:
+    inset 0 0 74px rgba(1, 28, 19, 0.58),
+    inset 0 0 0 1px rgba(207, 240, 214, 0.12);
+}
+
+.tableFelt::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  pointer-events: none;
+  border: 1px solid rgba(238, 211, 142, 0.2);
+  border-radius: inherit;
+}
+
+.tableBrand {
+  position: absolute;
+  left: 50%;
+  bottom: 35%;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translateX(-50%);
+  color: rgba(238, 225, 176, 0.14);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.4rem, 3vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+}
+
+.tableBrand small {
+  margin-top: 2px;
+  font-size: 0.55rem;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+}
+
+.tableSeat {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  padding: 10px 12px 7px;
+  border: 1px solid rgba(239, 226, 184, 0.32);
+  border-radius: 16px;
+  background: linear-gradient(150deg, rgba(255, 255, 255, 0.93), rgba(240, 244, 232, 0.82));
+  color: #17352a;
+  box-shadow: 0 12px 28px rgba(0, 25, 17, 0.28);
+  backdrop-filter: blur(6px);
+}
+
+.tableSeatWest {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+}
+
+.tableSeatEast {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  text-align: right;
+}
+
+.tableSeatSouth {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: end;
+  justify-self: center;
+  width: min(760px, 84%);
+  padding: 11px 16px 6px;
+  border-color: rgba(242, 195, 86, 0.74);
+  background: linear-gradient(150deg, rgba(255, 252, 235, 0.98), rgba(244, 231, 191, 0.9));
+  box-shadow:
+    0 16px 34px rgba(0, 25, 17, 0.34),
+    0 0 0 2px rgba(239, 189, 65, 0.18);
+}
+
+.tableSeatHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.tableSeatSouth .tableSeatHeader {
+  align-items: center;
+}
+
+.tableSeatIdentity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tableSeatSouth .tableSeatIdentity {
+  align-items: center;
+  flex: 1;
+}
+
+.tableSeatEast .tableSeatIdentity {
+  align-items: flex-end;
+}
+
+.tableRoleChip {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.tableRoleLandlord {
+  color: #6d3700;
+  background: linear-gradient(120deg, #ffe39a, #f5bd3e);
+  box-shadow: inset 0 0 0 1px rgba(132, 77, 0, 0.16);
+}
+
+.tableRoleFarmer {
+  color: #1b4a3a;
+  background: rgba(198, 225, 208, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(21, 91, 65, 0.14);
+}
+
+.tableRoleShort {
+  display: none;
+}
+
+.tableScore {
+  display: inline-grid;
+  min-width: 42px;
+  height: 34px;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(114, 73, 13, 0.2);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #56330c;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  font-weight: 800;
+  box-shadow: 0 4px 10px rgba(42, 27, 7, 0.1);
+}
+
+.tableHand {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(114, 73, 13, 0.35) transparent;
+}
+
+.tableHand > div {
+  flex-wrap: nowrap !important;
+  min-width: max-content;
+}
+
+.tableSeatSouth .tableHand > div {
+  justify-content: center;
+}
+
+.tableFarmerHand .cardBase {
+  margin-right: -6px !important;
+  box-shadow: 0 4px 8px rgba(20, 24, 17, 0.16);
+}
+
+.tableHandReverse > div {
+  flex-direction: row-reverse;
+}
+
+.tableRemaining {
+  margin-top: 1px;
+  color: #466457;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.tableSeatEast .tableRemaining {
+  text-align: right;
+}
+
+.tableSeatSouth .tableRemaining {
+  text-align: center;
+}
+
+.tableCenter {
+  grid-column: 2;
+  grid-row: 1;
+  z-index: 2;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  align-self: center;
+}
+
+.tableBottom,
+.tableTrick {
+  padding: 7px 9px;
+  border: 1px solid rgba(237, 222, 176, 0.25);
+  border-radius: 13px;
+  background: rgba(1, 40, 27, 0.36);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.tableCenterLabel {
+  margin-bottom: 4px;
+  color: #f2dda5;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.tableBottomCards {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.tableAwaiting {
+  padding: 7px 3px;
+  color: rgba(244, 244, 229, 0.66);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tableTrickRows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tableTrickRow {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-height: 25px;
+  color: #fff8df;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.tableTrickRow em {
+  color: rgba(255, 255, 255, 0.58);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tablePlayedCards {
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.tablePlayedCards > div {
+  flex-wrap: nowrap !important;
+}
+
+.tablePlayedCards .cardBase {
+  margin-right: -5px !important;
+  transform: scale(0.82);
+  transform-origin: left center;
+}
+
+@media (max-width: 980px) {
+  .tableFelt {
+    grid-template-columns: minmax(145px, 1fr) minmax(190px, 1fr) minmax(145px, 1fr);
+    grid-template-rows: minmax(170px, auto) minmax(185px, auto);
+    gap: 10px;
+    min-height: 440px;
+    padding: 28px 24px 20px;
+    border-radius: 38% / 16%;
+  }
+
+  .tableSeat {
+    padding-inline: 9px;
+  }
+
+  .tableSeatSouth {
+    width: 92%;
+  }
+}
+
+@media (max-width: 700px) {
+  .tableFrame {
+    padding: 6px;
+    border-radius: 25px;
+  }
+
+  .tableRail {
+    padding: 4px;
+    border-radius: 21px;
+  }
+
+  .tableFelt {
+    grid-template-columns: minmax(82px, 1fr) minmax(84px, 0.72fr) minmax(82px, 1fr);
+    grid-template-rows: minmax(150px, auto) minmax(178px, auto);
+    gap: 7px;
+    min-height: 395px;
+    padding: 22px 10px 14px;
+    border-radius: 28% / 11%;
+  }
+
+  .tableSeat {
+    padding: 7px 6px 5px;
+    border-radius: 12px;
+  }
+
+  .tableSeatSouth {
+    width: 96%;
+    padding-inline: 9px;
+  }
+
+  .tableSeatHeader {
+    gap: 4px;
+  }
+
+  .tableSeatWest .tableScore,
+  .tableSeatEast .tableScore {
+    min-width: 32px;
+    height: 27px;
+    font-size: 14px;
+  }
+
+  .tableRoleChip {
+    padding-inline: 5px;
+    font-size: 8px;
+  }
+
+  .tableRoleFull {
+    display: none;
+  }
+
+  .tableRoleShort {
+    display: inline;
+  }
+
+  .tableSeatWest .tableSeatIdentity > div > div:nth-child(2),
+  .tableSeatEast .tableSeatIdentity > div > div:nth-child(2) {
+    display: none;
+  }
+
+  .tableFarmerHand .cardBase {
+    margin-right: -11px !important;
+    transform: scale(0.86);
+    transform-origin: left center;
+  }
+
+  .tableHandReverse .cardBase {
+    transform-origin: right center;
+  }
+
+  .tableCenter {
+    gap: 5px;
+  }
+
+  .tableBottom,
+  .tableTrick {
+    padding: 5px;
+    border-radius: 10px;
+  }
+
+  .tableCenterLabel {
+    font-size: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  .tableBottomCards .cardBase {
+    margin-right: -8px !important;
+    transform: scale(0.82);
+  }
+
+  .tableTrickRow {
+    grid-template-columns: 17px minmax(0, 1fr);
+    gap: 2px;
+    font-size: 9px;
+  }
+
+  .tableBrand {
+    bottom: 38%;
+    font-size: 1.1rem;
+  }
+}
+
 .subFieldLabel {
   display: flex;
   flex-direction: column;
