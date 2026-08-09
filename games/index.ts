@@ -12,6 +12,10 @@ import { gobangEngine } from './gobang/game';
 import type { GobangAction, GobangState } from './gobang/game';
 import gobangConfig from './gobang/config.json';
 import GobangRenderer from './gobang/renderer';
+import { mahjongEngine } from './mahjong/game';
+import type { MahjongAction, MahjongState } from './mahjong/game';
+import mahjongConfig from './mahjong/config.json';
+import MahjongRenderer from './mahjong/renderer';
 
 export interface GameDefinition<State extends GameState = GameState, Action = unknown> {
   id: string;
@@ -53,10 +57,21 @@ const debateDefinition: GameDefinition<DebateState, any> = {
   renderer: DebateRenderer,
 };
 
+const mahjongDefinition: GameDefinition<MahjongState, MahjongAction> = {
+  id: mahjongConfig.id,
+  name: mahjongConfig.name,
+  displayName: mahjongConfig.displayName,
+  maxPlayers: mahjongConfig.maxPlayers,
+  description: mahjongConfig.description,
+  engine: mahjongEngine,
+  renderer: MahjongRenderer,
+};
+
 export const GAME_REGISTRY = {
   [ddzConfig.id]: ddzDefinition,
   [gobangConfig.id]: gobangDefinition,
   [debateConfig.id]: debateDefinition,
+  [mahjongConfig.id]: mahjongDefinition,
 } as const;
 
 export type GameId = keyof typeof GAME_REGISTRY;
